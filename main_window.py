@@ -730,7 +730,7 @@ class MainWindow:
             if item_name == '50*8折返跑' and default_val:
                 try:
                     default_val = self._format_run_time(default_val)
-                except:
+                except Exception:
                     default_val = str(default_val)
             test_vars[item_name] = add_field(f'{label}:', item_name, row, str(default_val) if default_val else '')
             row += 1

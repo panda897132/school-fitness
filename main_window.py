@@ -158,6 +158,10 @@ class MainWindow:
         for i, gname in enumerate(GRADE_NAMES):
             self.grade_listbox.insert(tk.END, f"  {gname}")
         
+        # 默认选中一年级
+        self.grade_listbox.selection_set(0)
+        self._refresh_class_list()
+        
         # 分隔
         ttk.Separator(parent, orient='horizontal').pack(fill='x', padx=4, pady=4)
         
@@ -184,8 +188,17 @@ class MainWindow:
             selectbackground='#1976d2',
             selectforeground='white'
         )
-        self.class_listbox.pack(fill='both', expand=True, padx=4, pady=4)
+        self.class_listbox.pack(fill='both', expand=True, padx=4, pady=(4, 0))
         self.class_listbox.bind('<<ListboxSelect>>', self._on_class_select)
+        
+        # 添加班级按钮
+        btn_frame = tk.Frame(parent, bg='#f5f5f5')
+        btn_frame.pack(fill='x', padx=4, pady=(2, 6))
+        tk.Button(
+            btn_frame, text='+ 添加班级', command=self._add_class,
+            bg='#1a73e8', fg='white', font=(TK_FONT, 9),
+            relief='flat', padx=10, pady=4
+        ).pack(side='left')
     
     def _build_right_panel(self, parent):
         """构建右侧面板"""
@@ -336,27 +349,29 @@ class MainWindow:
         self._update_status(f"当前班级: {class_data.get('name', '')} | 学生数: {len(students)}")
     
     def _insert_student_row(self, student):
-        """插入学生行"""
+        """插入学生行（列顺序对齐模板格式）"""
         tests = student.get('tests', {})
         scores = student.get('scores', {})
         
         values = [
-            self.current_class or '',
-            student.get('student_number', ''),
             student.get('name', ''),
-            student.get('student_code', ''),
             student.get('gender', ''),
             student.get('height', ''),
             student.get('weight', ''),
             student.get('bmi', ''),
-            student.get('bmi_grade', ''),
             student.get('bmi_score', ''),
             tests.get('肺活量', ''),
+            scores.get('肺活量', ''),
             tests.get('50米跑', ''),
+            scores.get('50米跑', ''),
             tests.get('坐位体前屈', ''),
+            scores.get('坐位体前屈', ''),
             tests.get('一分钟跳绳', ''),
+            scores.get('一分钟跳绳', ''),
             tests.get('仰卧起坐', ''),
+            scores.get('仰卧起坐', ''),
             self._format_run_time(tests.get('50*8折返跑')),
+            scores.get('50*8折返跑', ''),
             student.get('total_score', ''),
             student.get('total_grade', '')
         ]
@@ -462,17 +477,26 @@ class MainWindow:
         if result['success']:
             # 合并导入的数据
             classes = result['data'].get('classes', {})
+            imported_classes = {}
+            
             for cid, cdata in classes.items():
                 # 如果班级已存在，询问是否覆盖
                 existing = self.dm.get_class(cid)
                 if existing and existing.get('students'):
-                    if messagebox.askyesno('确认', f"班级 {cdata.get('name', cid)} 已有数据，是否覆盖？"):
-                        self.dm.import_students(cid, cdata.get('students', []))
-                else:
-                    # 确保班级存在
-                    if not existing:
-                        self.dm.add_class(cid, cdata.get('grade', 1), cdata.get('name', f'班级{cid}'))
-                    self.dm.import_students(cid, cdata.get('students', []))
+                    if not messagebox.askyesno('确认', f"班级 {cdata.get('name', cid)} 已有数据，是否覆盖？"):
+                        continue  # 用户跳过，不导入此班级
+                
+                # 确保班级存在
+                if not existing:
+                    self.dm.add_class(cid, cdata.get('grade', 1), cdata.get('name', f'班级{cid}'))
+                
+                imported_classes[cid] = cdata
+            
+            # 导入后自动计算分数
+            self._recalc_imported(imported_classes)
+            # 保存计算后的数据
+            for cid, cdata in imported_classes.items():
+                self.dm.import_students(cid, cdata.get('students', []))
             
             messagebox.showinfo('导入完成', result['message'])
             self._refresh_class_list()
@@ -590,6 +614,7 @@ class MainWindow:
         tk.Label(frame, text='年级:', bg='white').pack(anchor='w')
         grade_var = tk.StringVar(value='一年级')
         grade_combo = ttk.Combobox(frame, textvariable=grade_var, values=GRADE_NAMES, state='readonly')
+        grade_combo.current(0)  # 默认选"一年级"
         grade_combo.pack(fill='x', pady=(2, 10))
         
         tk.Label(frame, text='班级编号 (如101):', bg='white').pack(anchor='w')
@@ -728,14 +753,14 @@ class MainWindow:
             row=row, column=0, columnspan=2, pady=(15, 10))
         row += 1
         
-        # 基本信息
-        v_student_number = add_field('学号:', 'student_number', row, student_data.get('student_number', ''))
-        row += 1
+        # 基本信息（对齐模板列顺序：姓名→性别→身高→体重）
         v_name = add_field('姓名:', 'name', row, student_data.get('name', ''))
         row += 1
-        v_student_code = add_field('学籍号:', 'student_code', row, student_data.get('student_code', ''))
-        row += 1
         v_gender = add_field('性别:', 'gender', row, student_data.get('gender', '男'))
+        row += 1
+        v_student_number = add_field('学号:', 'student_number', row, student_data.get('student_number', ''))
+        row += 1
+        v_student_code = add_field('学籍号:', 'student_code', row, student_data.get('student_code', ''))
         row += 1
         v_height = add_field('身高(cm):', 'height', row, student_data.get('height', ''))
         row += 1
@@ -919,6 +944,24 @@ class MainWindow:
         
         self.dm.import_students(self.current_class, students)
         self._refresh_student_table()
+    
+    def _recalc_imported(self, classes):
+        """计算新导入班级中所有学生的分数"""
+        for cid, cdata in classes.items():
+            grade = cdata.get('grade', 1)
+            students = cdata.get('students', [])
+            
+            for s in students:
+                score_result = calc_total_score(s, grade)
+                h = s.get('height')
+                w = s.get('weight')
+                if h and w:
+                    s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
+                else:
+                    s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
+                s['scores'] = score_result.get('item_scores', {})
+                s['total_score'] = score_result.get('total_score', 0)
+                s['total_grade'] = score_result.get('total_grade', '')
     
     # ========== 统计图表 ==========
     def _show_chart(self, chart_type):

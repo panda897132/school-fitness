@@ -160,7 +160,6 @@ class MainWindow:
         
         # 默认选中一年级
         self.grade_listbox.selection_set(0)
-        self._refresh_class_list()
         
         # 分隔
         ttk.Separator(parent, orient='horizontal').pack(fill='x', padx=4, pady=4)
@@ -199,6 +198,9 @@ class MainWindow:
             bg='#1a73e8', fg='white', font=(TK_FONT, 9),
             relief='flat', padx=10, pady=4
         ).pack(side='left')
+        
+        # 班级列表创建后刷新
+        self._refresh_class_list()
     
     def _build_right_panel(self, parent):
         """构建右侧面板"""
@@ -309,6 +311,8 @@ class MainWindow:
     
     def _refresh_class_list(self):
         """刷新班级列表"""
+        if not hasattr(self, 'class_listbox'):
+            return  # 控件尚未创建
         self.class_listbox.delete(0, tk.END)
         if self.current_grade is None:
             return
@@ -323,6 +327,8 @@ class MainWindow:
     
     def _refresh_student_table(self):
         """刷新学生表格"""
+        if not hasattr(self, 'tree'):
+            return  # 控件尚未创建
         # 清空
         for item in self.tree.get_children():
             self.tree.delete(item)

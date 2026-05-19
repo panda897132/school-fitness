@@ -32,10 +32,46 @@ def _is_valid_value(val):
     return True
 
 
-def import_from_excel(filepath):
+def _parse_run_time(raw):
+    """解析跑步时间值
+    
+    支持三种格式:
+    - float (如 1.43 表示 1分43秒)
+    - str 时间格式 (如 "1'43")
+    - 纯秒数
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        v = float(raw)
+        # 检测分钟.秒格式：1.0~10.0 区间，小数部分可解释为秒(0-59)
+        if 0.5 <= v < 10.0:
+            minutes = int(v)
+            seconds_part = round((v - minutes) * 100)
+            if 0 <= seconds_part < 60:
+                return minutes * 60 + seconds_part
+        return v
+    # 字符串格式
+    raw_str = str(raw).strip()
+    m = re.match(r"(\d+)'(\d+)", raw_str)
+    if m:
+        return float(m.group(1)) * 60 + float(m.group(2))
+    try:
+        return float(raw_str)
+    except (ValueError, TypeError):
+        return 0
+
+
+def import_from_excel(filepath, grade_hint=None, class_prefix=None):
     """从Excel导入学生数据
     
-    与模板格式兼容：每个年级一个工作表，自动识别。
+    兼容两种格式：
+    1. 旧模板格式：每个年级一个工作表（一年级/二年级/.../六年级）
+    2. 新格式：单工作表"学生成绩"，表头含"总成绩"
+    
+    参数:
+        grade_hint: 年级提示（新格式下优先使用，否则自动推断）
+        class_prefix: 班级编号前缀（新格式下使用，否则自动生成）
     
     返回:
         {
@@ -54,6 +90,202 @@ def import_from_excel(filepath):
         '四年级': 4, '五年级': 5, '六年级': 6
     }
     
+    # 检测是否有旧格式的年级工作表
+    has_old_format = any(sn in grade_sheet_names for sn in wb.sheetnames)
+    
+    if has_old_format:
+        return _import_old_format(wb, grade_sheet_names)
+    
+    # 尝试新格式：检测不含"年级"且含"总成绩"的工作表
+    for sheet_name in wb.sheetnames:
+        if '年级' in sheet_name:
+            continue
+        ws = wb[sheet_name]
+        header_row = _detect_new_format_header(ws)
+        if header_row is not None:
+            result = _import_new_format(ws, header_row, grade_hint, class_prefix)
+            wb.close()
+            return result
+    
+    wb.close()
+    return {"success": False, "message": "未识别的文件格式，请使用模板或新格式Excel", "data": None}
+
+
+def _detect_new_format_header(ws):
+    """检测新格式表头行（含'姓名'和'总成绩'），返回行号或None"""
+    for row in range(1, min(ws.max_row + 1, 5)):
+        has_name = False
+        has_total_score = False
+        for col in range(1, ws.max_column + 1):
+            val = str(ws.cell(row=row, column=col).value or '').strip()
+            if '姓名' in val:
+                has_name = True
+            if '总成绩' in val:
+                has_total_score = True
+        if has_name and has_total_score:
+            return row
+    return None
+
+
+def _import_new_format(ws, header_row, grade_hint, class_prefix):
+    """从新格式工作表导入数据
+    
+    新格式列结构: 姓名|性别|身高|体重|BMI|成绩|肺活量|成绩|50米跑|成绩|...
+    每个测试项目后面跟一个"成绩"列(评分)，我们跳过评分列。
+    """
+    from config import GRADE_ITEMS, NUM_TO_CN
+    
+    # 建立列索引映射
+    col_map = {}
+    detected_items = set()
+    
+    for col in range(1, ws.max_column + 1):
+        hdr = str(ws.cell(row=header_row, column=col).value or '').strip()
+        if hdr == '成绩' or hdr == '总成绩' or hdr == 'BMI':
+            continue
+        if '姓名' in hdr:
+            col_map['name'] = col
+        elif '性别' in hdr:
+            col_map['gender'] = col
+        elif hdr == '身高':
+            col_map['height'] = col
+        elif hdr == '体重':
+            col_map['weight'] = col
+        elif '肺活量' in hdr:
+            col_map['肺活量'] = col
+            detected_items.add('肺活量')
+        elif ('50米' in hdr and '50×8' not in hdr and '50*8' not in hdr
+              and '50x8' not in hdr and '50X8' not in hdr and '往返' not in hdr):
+            col_map['50米跑'] = col
+            detected_items.add('50米跑')
+        elif '50×8' in hdr or '50*8' in hdr or '50x8' in hdr or '50X8' in hdr or '往返跑' in hdr:
+            col_map['50*8折返跑'] = col
+            detected_items.add('50*8折返跑')
+        elif '坐位' in hdr:
+            col_map['坐位体前屈'] = col
+            detected_items.add('坐位体前屈')
+        elif '跳绳' in hdr:
+            col_map['一分钟跳绳'] = col
+            detected_items.add('一分钟跳绳')
+        elif '仰卧' in hdr:
+            col_map['仰卧起坐'] = col
+            detected_items.add('仰卧起坐')
+    
+    # 推断年级
+    if grade_hint:
+        grade = grade_hint
+    elif '50*8折返跑' in detected_items:
+        grade = 5
+    elif '仰卧起坐' in detected_items:
+        grade = 3
+    else:
+        grade = 1
+    
+    # 自动生成班级编号
+    if class_prefix:
+        cid_prefix = str(class_prefix).strip()
+    else:
+        cid_prefix = f"{grade}01"
+    
+    # 班级名称
+    cn_grade = NUM_TO_CN.get(grade, str(grade))
+    class_suffix = cid_prefix[-2:] if len(cid_prefix) >= 2 else cid_prefix
+    class_name = f"{cn_grade}({class_suffix})班"
+    
+    # 读取数据
+    students = []
+    student_num = 0
+    
+    for row in range(header_row + 1, ws.max_row + 1):
+        name_cell = ws.cell(row=row, column=col_map.get('name', 0)).value
+        if not _is_valid_value(name_cell):
+            continue
+        
+        student_num += 1
+        student_number = str(student_num).zfill(2)
+        
+        # 性别映射: "1"→"男", "2"→"女"
+        gender_val = str(ws.cell(row=row, column=col_map.get('gender', 0)).value or '').strip()
+        if gender_val == '1' or '男' in gender_val:
+            gender = '男'
+        elif gender_val == '2' or '女' in gender_val:
+            gender = '女'
+        else:
+            gender = '男'
+        
+        # 身高
+        height = None
+        if 'height' in col_map:
+            hv = ws.cell(row=row, column=col_map['height']).value
+            if _is_valid_value(hv):
+                try:
+                    height = float(hv)
+                except (ValueError, TypeError):
+                    height = None
+        
+        # 体重
+        weight = None
+        if 'weight' in col_map:
+            wv = ws.cell(row=row, column=col_map['weight']).value
+            if _is_valid_value(wv):
+                try:
+                    weight = float(wv)
+                except (ValueError, TypeError):
+                    weight = None
+        
+        # 测试项目值
+        tests = {}
+        for item_name in GRADE_ITEMS.get(grade, []):
+            col_idx = col_map.get(item_name)
+            if col_idx:
+                raw = ws.cell(row=row, column=col_idx).value
+                if _is_valid_value(raw):
+                    if item_name == '50*8折返跑':
+                        tests[item_name] = _parse_run_time(raw)
+                    else:
+                        try:
+                            tests[item_name] = float(raw)
+                        except (ValueError, TypeError):
+                            raw_str = str(raw).strip()
+                            tests[item_name] = _parse_run_time(raw_str)
+                else:
+                    tests[item_name] = None
+            else:
+                tests[item_name] = None
+        
+        student = {
+            'id': f"{cid_prefix}{student_number}",
+            'name': str(name_cell).strip(),
+            'student_number': student_number,
+            'student_code': '',
+            'gender': gender,
+            'height': height,
+            'weight': weight,
+            'bmi': None,
+            'tests': tests,
+            'scores': {},
+            'total_score': 0,
+            'total_grade': ''
+        }
+        students.append(student)
+    
+    return {
+        "success": True,
+        "message": f"导入完成：成功 {len(students)} 条",
+        "data": {
+            "classes": {
+                cid_prefix: {
+                    "grade": grade,
+                    "name": class_name,
+                    "students": students
+                }
+            }
+        }
+    }
+
+
+def _import_old_format(wb, grade_sheet_names):
+    """从旧模板格式导入数据"""
     all_classes = {}
     total_imported = 0
     total_skipped = 0
@@ -197,16 +429,15 @@ def import_from_excel(filepath):
                     if col_idx:
                         raw = ws.cell(row=row, column=col_idx).value
                         if _is_valid_value(raw):
-                            try:
-                                tests[item_name] = float(raw)
-                            except (ValueError, TypeError):
-                                # 可能是时间格式如 1'36
-                                raw_str = str(raw).strip()
-                                m = re.match(r"(\d+)'(\d+)", raw_str)
-                                if m:
-                                    tests[item_name] = float(m.group(1)) * 60 + float(m.group(2))
-                                else:
-                                    tests[item_name] = 0
+                            if item_name == '50*8折返跑':
+                                tests[item_name] = _parse_run_time(raw)
+                            else:
+                                try:
+                                    tests[item_name] = float(raw)
+                                except (ValueError, TypeError):
+                                    # 可能是时间格式如 1'36
+                                    raw_str = str(raw).strip()
+                                    tests[item_name] = _parse_run_time(raw_str)
                         else:
                             tests[item_name] = None
                     else:
@@ -236,7 +467,7 @@ def import_from_excel(filepath):
                 
                 students_by_class[class_id]['students'].append(student)
                 total_imported += 1
-            except Exception as e:
+            except Exception:
                 total_skipped += 1
                 continue
         

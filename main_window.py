@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import os
+import openpyxl
 from config import (
     MAIN_WINDOW_SIZE, APP_TITLE, GRADE_NAMES, GRADE_ITEMS,
     STUDENT_COLUMNS, TK_FONT
@@ -419,10 +420,44 @@ class MainWindow:
         if not filepath:
             return
         
+        self._update_status('正在检查文件格式...')
+        self.window.update()
+        
+        # 快速检测文件格式
+        grade_hint = None
+        class_prefix = None
+        try:
+            wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+            grade_sheet_names = {'一年级', '二年级', '三年级', '四年级', '五年级', '六年级'}
+            has_old_format = any(sn in grade_sheet_names for sn in wb.sheetnames)
+            wb.close()
+            
+            if not has_old_format:
+                # 新格式——弹出对话框让用户指定年级和班级编号
+                grade_str = simpledialog.askstring(
+                    '新格式导入 - 年级',
+                    '检测到新格式Excel文件。\n\n请指定年级 (1-6，留空则自动推断):',
+                    initialvalue=''
+                )
+                if grade_str and grade_str.strip().isdigit():
+                    g = int(grade_str.strip())
+                    if 1 <= g <= 6:
+                        grade_hint = g
+                
+                class_prefix = simpledialog.askstring(
+                    '新格式导入 - 班级编号',
+                    '请输入班级编号 (如501，留空则自动生成):',
+                    initialvalue=f'{grade_hint or 5}01' if grade_hint else ''
+                )
+                if class_prefix:
+                    class_prefix = class_prefix.strip()
+        except Exception:
+            pass  # 检测失败则走自动推断路径
+        
         self._update_status('正在导入...')
         self.window.update()
         
-        result = import_from_excel(filepath)
+        result = import_from_excel(filepath, grade_hint=grade_hint, class_prefix=class_prefix)
         
         if result['success']:
             # 合并导入的数据

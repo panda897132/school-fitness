@@ -29,6 +29,11 @@
       "grade": 1,
       "name": "一(2)班",
       "students": []
+    },
+    "103": {
+      "grade": 1,
+      "name": "一(3)班",
+      "students": []
     }
   }
 }

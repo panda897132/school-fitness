@@ -307,6 +307,10 @@ def calc_total_score(student_data, grade):
     height = student_data.get('height')
     weight = student_data.get('weight')
     tests = student_data.get('tests', {})
+
+    # 空值保护：缺少关键字段时返回不完整标记
+    if not gender or height is None or weight is None:
+        return {'item_scores': {}, 'total_score': 0, 'total_grade': '数据不完整'}
     
     result = {'item_scores': {}}
     

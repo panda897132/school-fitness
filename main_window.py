@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import os
 from config import (
     MAIN_WINDOW_SIZE, APP_TITLE, GRADE_NAMES, GRADE_ITEMS,
-    STUDENT_COLUMNS
+    STUDENT_COLUMNS, TK_FONT
 )
 from score_engine import calc_bmi_score, calc_total_score
 from excel_io import import_from_excel, export_statistics_report
@@ -25,7 +25,7 @@ class MainWindow:
         self._center_window(self.window, w, h)
         self.window.minsize(900, 500)
         
-        self.current_grade = None  # 当前选中的年级
+        self.current_grade = 1  # 当前选中的年级（默认一年级）
         self.current_class = None  # 当前选中的班级
         
         # 缓存学生数据
@@ -53,11 +53,11 @@ class MainWindow:
     
     # ========== 菜单栏 ==========
     def _build_menu(self):
-        menubar = tk.Menu(self.window, font=('Microsoft YaHei', 10))
+        menubar = tk.Menu(self.window, font=(TK_FONT, 10))
         self.window.config(menu=menubar)
         
         # 文件菜单
-        file_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei', 10))
+        file_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='文件', menu=file_menu)
         file_menu.add_command(label='导入Excel数据...', command=self._import_excel, accelerator='Ctrl+I')
         file_menu.add_command(label='导出统计报告...', command=self._export_report, accelerator='Ctrl+E')
@@ -67,7 +67,7 @@ class MainWindow:
         file_menu.add_command(label='退出', command=self._on_close, accelerator='Ctrl+Q')
         
         # 数据菜单
-        data_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei', 10))
+        data_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='数据', menu=data_menu)
         data_menu.add_command(label='添加班级...', command=self._add_class)
         data_menu.add_command(label='删除班级', command=self._delete_class)
@@ -79,7 +79,7 @@ class MainWindow:
         data_menu.add_command(label='重新计算全部分数', command=self._recalc_all_scores)
         
         # 统计菜单
-        stats_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei', 10))
+        stats_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='统计', menu=stats_menu)
         stats_menu.add_command(label='班级统计', command=lambda: self._show_chart('班级'))
         stats_menu.add_command(label='年级统计', command=lambda: self._show_chart('年级'))
@@ -88,7 +88,7 @@ class MainWindow:
         stats_menu.add_command(label='项目分析', command=lambda: self._show_chart('雷达图'))
         
         # 帮助菜单
-        help_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei', 10))
+        help_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='帮助', menu=help_menu)
         help_menu.add_command(label='使用说明', command=self._show_help)
         help_menu.add_command(label='关于', command=self._show_about)
@@ -121,7 +121,7 @@ class MainWindow:
         # 状态栏
         self.status_bar = tk.Label(
             self.window, text='就绪', anchor='w',
-            relief='sunken', font=('Microsoft YaHei', 9),
+            relief='sunken', font=(TK_FONT, 9),
             bg='#e8e8e8'
         )
         self.status_bar.pack(side='bottom', fill='x')
@@ -131,7 +131,7 @@ class MainWindow:
         # 标题
         tk.Label(
             parent, text='年级列表', 
-            font=('Microsoft YaHei', 12, 'bold'),
+            font=(TK_FONT, 12, 'bold'),
             bg='#1976d2', fg='white', pady=8
         ).pack(fill='x')
         
@@ -141,7 +141,7 @@ class MainWindow:
         
         self.grade_listbox = tk.Listbox(
             grade_frame,
-            font=('Microsoft YaHei', 11),
+            font=(TK_FONT, 11),
             selectmode='single',
             activestyle='none',
             bg='white',
@@ -163,7 +163,7 @@ class MainWindow:
         # 班级列表标题
         tk.Label(
             parent, text='班级列表',
-            font=('Microsoft YaHei', 11, 'bold'),
+            font=(TK_FONT, 11, 'bold'),
             bg='#f5f5f5', anchor='w'
         ).pack(fill='x', padx=8, pady=(4, 2))
         
@@ -173,7 +173,7 @@ class MainWindow:
         
         self.class_listbox = tk.Listbox(
             class_frame,
-            font=('Microsoft YaHei', 10),
+            font=(TK_FONT, 10),
             selectmode='single',
             activestyle='none',
             bg='white',
@@ -196,7 +196,7 @@ class MainWindow:
         # 班级标题
         self.class_title_label = tk.Label(
             toolbar, text='请选择年级和班级',
-            font=('Microsoft YaHei', 13, 'bold'),
+            font=(TK_FONT, 13, 'bold'),
             bg='#e3f2fd', fg='#1976d2'
         )
         self.class_title_label.pack(side='left', padx=15, pady=5)
@@ -204,7 +204,7 @@ class MainWindow:
         # 统计摘要
         self.stats_label = tk.Label(
             toolbar, text='',
-            font=('Microsoft YaHei', 10),
+            font=(TK_FONT, 10),
             bg='#e3f2fd', fg='#666'
         )
         self.stats_label.pack(side='right', padx=15)
@@ -256,7 +256,7 @@ class MainWindow:
     
     def _build_context_menu(self):
         """右键菜单"""
-        self.context_menu = tk.Menu(self.window, tearoff=0, font=('Microsoft YaHei', 10))
+        self.context_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         self.context_menu.add_command(label='编辑学生', command=self._edit_student)
         self.context_menu.add_command(label='删除学生', command=self._delete_student)
         self.context_menu.add_separator()
@@ -496,18 +496,18 @@ class MainWindow:
         frame = tk.Frame(dialog, bg='white')
         frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        tk.Label(frame, text='修改密码', font=('Microsoft YaHei', 14, 'bold'), bg='white').pack(pady=(0, 20))
+        tk.Label(frame, text='修改密码', font=(TK_FONT, 14, 'bold'), bg='white').pack(pady=(0, 20))
         
         tk.Label(frame, text='旧密码:', bg='white').pack(anchor='w')
-        old_pw = tk.Entry(frame, show='●', font=('Microsoft YaHei', 10))
+        old_pw = tk.Entry(frame, show='●', font=(TK_FONT, 10))
         old_pw.pack(fill='x', ipady=4, pady=(2, 10))
         
         tk.Label(frame, text='新密码:', bg='white').pack(anchor='w')
-        new_pw = tk.Entry(frame, show='●', font=('Microsoft YaHei', 10))
+        new_pw = tk.Entry(frame, show='●', font=(TK_FONT, 10))
         new_pw.pack(fill='x', ipady=4, pady=(2, 10))
         
         tk.Label(frame, text='确认密码:', bg='white').pack(anchor='w')
-        confirm_pw = tk.Entry(frame, show='●', font=('Microsoft YaHei', 10))
+        confirm_pw = tk.Entry(frame, show='●', font=(TK_FONT, 10))
         confirm_pw.pack(fill='x', ipady=4, pady=(2, 15))
         
         def do_change():
@@ -533,7 +533,7 @@ class MainWindow:
         
         tk.Button(
             frame, text='确认修改', command=do_change,
-            bg='#1a73e8', fg='white', font=('Microsoft YaHei', 10, 'bold'),
+            bg='#1a73e8', fg='white', font=(TK_FONT, 10, 'bold'),
             relief='flat', padx=20, pady=6
         ).pack()
     
@@ -550,7 +550,7 @@ class MainWindow:
         frame = tk.Frame(dialog, bg='white')
         frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        tk.Label(frame, text='添加班级', font=('Microsoft YaHei', 13, 'bold'), bg='white').pack(pady=(0, 15))
+        tk.Label(frame, text='添加班级', font=(TK_FONT, 13, 'bold'), bg='white').pack(pady=(0, 15))
         
         tk.Label(frame, text='年级:', bg='white').pack(anchor='w')
         grade_var = tk.StringVar(value='一年级')
@@ -586,7 +586,7 @@ class MainWindow:
         
         tk.Button(
             frame, text='添加', command=do_add,
-            bg='#1a73e8', fg='white', font=('Microsoft YaHei', 10, 'bold'),
+            bg='#1a73e8', fg='white', font=(TK_FONT, 10, 'bold'),
             relief='flat', padx=20, pady=6
         ).pack()
     
@@ -673,7 +673,7 @@ class MainWindow:
         pady_frame = 15
         
         def add_field(label, key, row, default='', entry_type='text'):
-            tk.Label(scroll_frame, text=label, bg='white', font=('Microsoft YaHei', 10), anchor='w').grid(
+            tk.Label(scroll_frame, text=label, bg='white', font=(TK_FONT, 10), anchor='w').grid(
                 row=row, column=0, sticky='w', padx=padx, pady=(8, 2))
             
             if key == 'gender':
@@ -683,13 +683,13 @@ class MainWindow:
                 return var
             
             var = tk.StringVar(value=str(default) if default else '')
-            entry = tk.Entry(scroll_frame, textvariable=var, font=('Microsoft YaHei', 10), width=40)
+            entry = tk.Entry(scroll_frame, textvariable=var, font=(TK_FONT, 10), width=40)
             entry.grid(row=row, column=1, padx=(10, padx), pady=(8, 2), ipady=3, sticky='ew')
             return var
         
         row = 0
         tk.Label(scroll_frame, text='添加学生' if mode == 'add' else '编辑学生', 
-                font=('Microsoft YaHei', 14, 'bold'), bg='white', fg='#1976d2').grid(
+                font=(TK_FONT, 14, 'bold'), bg='white', fg='#1976d2').grid(
             row=row, column=0, columnspan=2, pady=(15, 10))
         row += 1
         
@@ -712,7 +712,7 @@ class MainWindow:
             row=row, column=0, columnspan=2, sticky='ew', padx=padx, pady=10)
         row += 1
         
-        tk.Label(scroll_frame, text='测试项目成绩', font=('Microsoft YaHei', 11, 'bold'), bg='white', fg='#555').grid(
+        tk.Label(scroll_frame, text='测试项目成绩', font=(TK_FONT, 11, 'bold'), bg='white', fg='#555').grid(
             row=row, column=0, columnspan=2, pady=(5, 5))
         row += 1
         
@@ -820,13 +820,13 @@ class MainWindow:
         
         tk.Button(
             btn_frame, text='保存', command=save,
-            bg='#1a73e8', fg='white', font=('Microsoft YaHei', 11, 'bold'),
+            bg='#1a73e8', fg='white', font=(TK_FONT, 11, 'bold'),
             relief='flat', width=12, padx=10, pady=6
         ).pack(side='left', padx=5)
         
         tk.Button(
             btn_frame, text='取消', command=dialog.destroy,
-            bg='#ccc', fg='#333', font=('Microsoft YaHei', 11),
+            bg='#ccc', fg='#333', font=(TK_FONT, 11),
             relief='flat', width=12, padx=10, pady=6
         ).pack(side='left', padx=5)
     
@@ -844,9 +844,12 @@ class MainWindow:
             
             for s in students:
                 score_result = calc_total_score(s, grade)
-                s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(
-                    s.get('height'), s.get('weight'), s.get('gender', '男'), grade
-                )
+                h = s.get('height')
+                w = s.get('weight')
+                if h and w:
+                    s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
+                else:
+                    s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
                 s['scores'] = score_result.get('item_scores', {})
                 s['total_score'] = score_result.get('total_score', 0)
                 s['total_grade'] = score_result.get('total_grade', '')
@@ -869,9 +872,12 @@ class MainWindow:
                 if s.get('id') == sid:
                     grade = self.current_grade or 1
                     score_result = calc_total_score(s, grade)
-                    s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(
-                        s.get('height'), s.get('weight'), s.get('gender', '男'), grade
-                    )
+                    h = s.get('height')
+                    w = s.get('weight')
+                    if h and w:
+                        s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
+                    else:
+                        s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
                     s['scores'] = score_result.get('item_scores', {})
                     s['total_score'] = score_result.get('total_score', 0)
                     s['total_grade'] = score_result.get('total_grade', '')
@@ -904,7 +910,7 @@ class MainWindow:
             elif chart_type == '雷达图':
                 self._show_radar_chart(frame)
         except Exception as e:
-            tk.Label(frame, text=f'图表生成失败: {e}', bg='white', font=('Microsoft YaHei', 11)).pack(expand=True)
+            tk.Label(frame, text=f'图表生成失败: {e}', bg='white', font=(TK_FONT, 11)).pack(expand=True)
     
     def _show_class_bar_chart(self, parent):
         """班级统计柱状图"""

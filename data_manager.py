@@ -149,6 +149,11 @@ class DataManager:
             sid = student_data.get('student_number', str(len(students) + 1).zfill(2))
             student_data['id'] = f"{class_id}{sid}"
         
+        # 检查重复ID
+        for existing in students:
+            if existing.get('id') == student_data.get('id'):
+                return False, "学生ID已存在，请勿重复添加"
+        
         students.append(student_data)
         data['classes'][class_id]['students'] = students
         self._save_students(data)

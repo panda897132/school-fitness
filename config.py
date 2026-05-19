@@ -79,6 +79,9 @@ STUDENT_COLUMNS = [
     ("等级", 60),
 ]
 
+# Tkinter 字体（优先使用系统可用中文字体，避免硬编码 Windows 字体）
+TK_FONT = 'Noto Sans CJK JP'
+
 # matplotlib 中文字体候选
 FONT_CANDIDATES = [
     "SimHei", "Microsoft YaHei",

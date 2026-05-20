@@ -417,6 +417,8 @@ class MainWindow:
     # ========== 事件处理 ==========
     def _on_grade_select(self, event):
         """年级选择事件"""
+        if hasattr(self, '_last_grade_menu') and self._last_grade_menu:
+            self._last_grade_menu.unpost()
         sel = self.grade_listbox.curselection()
         if not sel:
             return
@@ -425,6 +427,8 @@ class MainWindow:
     
     def _on_class_select(self, event):
         """班级选择事件"""
+        if hasattr(self, '_last_class_menu') and self._last_class_menu:
+            self._last_class_menu.unpost()
         sel = self.class_listbox.curselection()
         if not sel:
             return

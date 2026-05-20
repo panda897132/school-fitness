@@ -281,10 +281,14 @@ class MainWindow:
             self.grade_listbox.selection_clear(0, tk.END)
             self.grade_listbox.selection_set(idx)
             self._on_grade_select(None)
+        # 先关闭上次的菜单
+        if hasattr(self, '_last_grade_menu') and self._last_grade_menu:
+            self._last_grade_menu.unpost()
         grade_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         grade_name = GRADE_NAMES[idx] if idx < len(GRADE_NAMES) else '一年级'
         grade_menu.add_command(label=f'在"{grade_name}"添加班级...', command=lambda: self._add_class(grade_name))
         grade_menu.post(event.x_root, event.y_root)
+        self._last_grade_menu = grade_menu
     
     def _show_class_context_menu(self, event):
         """显示班级列表右键菜单"""
@@ -293,11 +297,14 @@ class MainWindow:
             self.class_listbox.selection_clear(0, tk.END)
             self.class_listbox.selection_set(idx)
             self._on_class_select(None)
+        if hasattr(self, '_last_class_menu') and self._last_class_menu:
+            self._last_class_menu.unpost()
         class_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         if self.current_class:
             class_menu.add_command(label='📊 项目分析', command=self._show_class_analysis)
             class_menu.add_command(label='🗑 删除班级', command=self._delete_class)
         class_menu.post(event.x_root, event.y_root)
+        self._last_class_menu = class_menu
     
     def _show_class_analysis(self):
         """显示班级项目分析（单项+总成绩的等级占比）"""

@@ -642,36 +642,63 @@ class MainWindow:
     
     def _add_class(self, default_grade_name=None):
         """添加班级"""
+        from config import CN_TO_NUM
+        
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
-        dialog.geometry('350x230')
+        dialog.geometry('380x430')
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        center_window(dialog, 350, 230)
+        center_window(dialog, 380, 430)
         
         frame = tk.Frame(dialog, bg='white')
-        frame.pack(fill='both', expand=True, padx=25, pady=25)
+        frame.pack(fill='both', expand=True, padx=20, pady=15)
         
-        tk.Label(frame, text='➕ 添加新班级', font=(TK_FONT, 14, 'bold'), bg='white', fg='#333').pack(pady=(0, 20))
+        tk.Label(frame, text='➕ 添加新班级', font=(TK_FONT, 14, 'bold'), bg='white', fg='#333').pack(pady=(0, 10))
         
         # 年级行
         grade_row = tk.Frame(frame, bg='white')
         grade_row.pack(fill='x', pady=3)
-        tk.Label(grade_row, text='年级：', font=(TK_FONT, 11), bg='white', width=10, anchor='w').pack(side='left')
+        tk.Label(grade_row, text='年级：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
         default_grade = default_grade_name or GRADE_NAMES[0]
         grade_var = tk.StringVar(value=default_grade)
-        grade_combo = ttk.Combobox(grade_row, textvariable=grade_var, values=GRADE_NAMES, state='readonly', width=15, font=(TK_FONT, 11))
+        grade_combo = ttk.Combobox(grade_row, textvariable=grade_var, values=GRADE_NAMES, state='readonly', width=18, font=(TK_FONT, 11))
         if default_grade_name and default_grade_name in GRADE_NAMES:
             grade_combo.current(GRADE_NAMES.index(default_grade_name))
         else:
             grade_combo.current(0)
         grade_combo.pack(side='left', fill='x', expand=True)
         
-        # 班级编号行
+        # 已有班级列表
+        tk.Label(frame, text='已有班级：', font=(TK_FONT, 11), bg='white', fg='#555', anchor='w').pack(fill='x', pady=(10, 2))
+        
+        existing_frame = tk.Frame(frame, bg='#f5f5f5', relief='solid', bd=1)
+        existing_frame.pack(fill='x', pady=(0, 8))
+        existing_label = tk.Label(
+            existing_frame, text='', font=(TK_FONT, 9), bg='#f5f5f5', fg='#666',
+            justify='left', anchor='w', wraplength=320
+        )
+        existing_label.pack(fill='x', padx=8, pady=6)
+        
+        def _refresh_existing():
+            grade_name = grade_var.get()
+            grade_num = CN_TO_NUM.get(grade_name[0], 0)
+            if grade_num:
+                all_classes = self.dm.get_classes_by_grade(grade_num)
+                if all_classes:
+                    names = [c.get('name', cid) for cid, c in sorted(all_classes.items())]
+                    existing_label.config(text='  '.join(names), fg='#333')
+                else:
+                    existing_label.config(text='（暂无班级）', fg='#999')
+        
+        grade_combo.bind('<<ComboboxSelected>>', lambda e: _refresh_existing())
+        _refresh_existing()
+        
+        # 班级编号行 — Label宽度与年级对齐
         id_row = tk.Frame(frame, bg='white')
         id_row.pack(fill='x', pady=3)
-        tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg='white', width=10, anchor='w').pack(side='left')
+        tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
         class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), width=18)
         class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
         class_id_entry.insert(0, '101')
@@ -679,7 +706,7 @@ class MainWindow:
         class_id_entry.select_range(0, 'end')
         class_id_entry.bind('<Return>', lambda e: do_add())
         
-        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(2, 10))
+        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(2, 6))
         
         def do_add():
             grade_name = grade_var.get()
@@ -688,7 +715,6 @@ class MainWindow:
                 messagebox.showwarning('提示', '请输入班级编号', parent=dialog)
                 return
             
-            from config import CN_TO_NUM
             grade = CN_TO_NUM.get(grade_name[0], 0)
             if grade == 0:
                 messagebox.showerror('错误', '无效年级', parent=dialog)
@@ -704,8 +730,9 @@ class MainWindow:
             else:
                 messagebox.showerror('失败', msg, parent=dialog)
         
+        # 按钮行 — 紧贴内容
         btn_row = tk.Frame(frame, bg='white')
-        btn_row.pack(fill='x', pady=(10, 0))
+        btn_row.pack(fill='x', pady=(6, 0))
         tk.Button(
             btn_row, text='✓ 确认添加', command=do_add,
             bg='#1a73e8', fg='white', font=(TK_FONT, 11, 'bold'),

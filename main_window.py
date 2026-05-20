@@ -183,6 +183,7 @@ class MainWindow:
         )
         self.class_listbox.pack(fill='both', expand=True, padx=4, pady=(4, 6))
         self.class_listbox.bind('<<ListboxSelect>>', self._on_class_select)
+        self.class_listbox.bind('<Button-3>', self._show_class_context_menu)
         # 班级列表创建后刷新
         self._refresh_class_list()
     
@@ -287,6 +288,126 @@ class MainWindow:
         grade_name = GRADE_NAMES[idx] if idx < len(GRADE_NAMES) else '一年级'
         grade_menu.add_command(label=f'在"{grade_name}"添加班级...', command=lambda: self._add_class(grade_name))
         grade_menu.post(event.x_root, event.y_root)
+    
+    def _show_class_context_menu(self, event):
+        """显示班级列表右键菜单"""
+        idx = self.class_listbox.nearest(event.y)
+        if idx >= 0:
+            self.class_listbox.selection_clear(0, tk.END)
+            self.class_listbox.selection_set(idx)
+            self._on_class_select(None)
+        class_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
+        if self.current_class:
+            class_menu.add_command(label='📊 项目分析', command=self._show_class_analysis)
+            class_menu.add_command(label='🗑 删除班级', command=self._delete_class)
+        class_menu.post(event.x_root, event.y_root)
+    
+    def _show_class_analysis(self):
+        """显示班级项目分析（单项+总成绩的等级占比）"""
+        if not self.current_class:
+            return
+        class_data = self.dm.get_class(self.current_class)
+        if not class_data:
+            return
+        students = class_data.get('students', [])
+        if not students:
+            messagebox.showinfo('提示', '该班级暂无学生数据')
+            return
+        
+        class_name = class_data.get('name', self.current_class)
+        grade_num = class_data.get('grade', 1)
+        grade_name = GRADE_NAMES[grade_num - 1] if 1 <= grade_num <= 6 else str(grade_num)
+        
+        # 获取该年级的测试项目
+        from config import GRADE_ITEMS
+        items = GRADE_ITEMS.get(grade_num, [])
+        
+        # 等级判定函数
+        def get_grade_level(score):
+            if score is None or score == '':
+                return None
+            try:
+                s = float(score)
+            except (ValueError, TypeError):
+                return None
+            if s >= 90: return '优秀'
+            elif s >= 80: return '良好'
+            elif s >= 60: return '及格'
+            else: return '不及格'
+        
+        def calc_stats(scores_or_key):
+            """统计某项目(或总成绩)的等级分布, 返回 {等级: (人数, 百分比)}"""
+            counts = {'优秀': 0, '良好': 0, '及格': 0, '不及格': 0}
+            valid = 0
+            for s in students:
+                if callable(scores_or_key):
+                    level = scores_or_key(s)
+                else:
+                    val = s.get('scores', {}).get(scores_or_key) if isinstance(scores_or_key, str) else s.get('total_score')
+                    level = get_grade_level(val)
+                if level:
+                    counts[level] += 1
+                    valid += 1
+            return {k: (counts[k], f'{counts[k]/valid*100:.1f}%' if valid > 0 else '—') for k in counts}, valid
+        
+        # 弹窗
+        dialog = tk.Toplevel(self.window)
+        dialog.title(f'{class_name} — 项目分析')
+        dialog.geometry('760x420')
+        dialog.resizable(True, True)
+        dialog.transient(self.window)
+        dialog.grab_set()
+        center_window(dialog, 760, 420)
+        
+        # 标题
+        header = tk.Frame(dialog, bg='#1976d2')
+        header.pack(fill='x')
+        tk.Label(header, text=f'{class_name} ({grade_name}) — 项目分析', 
+                 font=(TK_FONT, 13, 'bold'), bg='#1976d2', fg='white', pady=10).pack()
+        
+        # 表格
+        tree_frame = tk.Frame(dialog)
+        tree_frame.pack(fill='both', expand=True, padx=8, pady=8)
+        
+        cols = ('项目', '总人数', '优秀', '优秀%', '良好', '良好%', '及格', '及格%', '不及格', '不及格%')
+        col_widths = (120, 60, 55, 55, 55, 55, 55, 55, 55, 55)
+        
+        tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=len(items)+4)
+        for c, w in zip(cols, col_widths):
+            tree.heading(c, text=c, anchor='center')
+            tree.column(c, width=w, anchor='center', minwidth=40)
+        
+        # 滚动条
+        sb = tk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side='left', fill='both', expand=True)
+        sb.pack(side='right', fill='y')
+        
+        # 填充单项数据
+        for item in items:
+            stats, valid = calc_stats(item)
+            tree.insert('', tk.END, values=(
+                item, valid,
+                stats['优秀'][0], stats['优秀'][1],
+                stats['良好'][0], stats['良好'][1],
+                stats['及格'][0], stats['及格'][1],
+                stats['不及格'][0], stats['不及格'][1],
+            ))
+        
+        # 总成绩行
+        total_stats, total_valid = calc_stats('total_score')
+        tree.insert('', tk.END, values=(
+            '📌 总成绩', total_valid,
+            total_stats['优秀'][0], total_stats['优秀'][1],
+            total_stats['良好'][0], total_stats['良好'][1],
+            total_stats['及格'][0], total_stats['及格'][1],
+            total_stats['不及格'][0], total_stats['不及格'][1],
+        ), tags=('total',))
+        tree.tag_configure('total', background='#e3f2fd', font=(TK_FONT, 10, 'bold'))
+        
+        # 关闭按钮
+        tk.Button(dialog, text='关闭', command=dialog.destroy, width=12,
+                  bg='#1976d2', fg='white', font=(TK_FONT, 10)).pack(pady=(0, 10))
     
     # ========== 事件处理 ==========
     def _on_grade_select(self, event):

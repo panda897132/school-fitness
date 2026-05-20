@@ -32,6 +32,7 @@ class MainWindow:
         self.current_class = None  # 当前选中的班级
         self._iid_to_sid = {}  # TreeView iid → 真实 student_id 映射
         self._importing = False  # 导入锁，防止并发导入
+        self._add_class_dialog = None  # 添加班级对话框引用，防止重复打开
         
         self._build_menu()
         self._build_ui()
@@ -779,6 +780,12 @@ class MainWindow:
         """添加班级"""
         from config import CN_TO_NUM
         
+        # 防止重复打开对话框
+        if self._add_class_dialog and self._add_class_dialog.winfo_exists():
+            self._add_class_dialog.lift()
+            self._add_class_dialog.focus_force()
+            return
+        
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
         dialog.geometry('380x390')
@@ -786,6 +793,10 @@ class MainWindow:
         dialog.transient(self.window)
         dialog.grab_set()
         center_window(dialog, 380, 390)
+        self._add_class_dialog = dialog
+        dialog.protocol('WM_DELETE_WINDOW', lambda: (setattr(self, '_add_class_dialog', None), dialog.destroy()))
+        # 任意方式关闭对话框时清除引用
+        dialog.bind('<Destroy>', lambda e: setattr(self, '_add_class_dialog', None))
         
         frame = tk.Frame(dialog, bg='white')
         frame.pack(fill='both', expand=True, padx=20, pady=12)

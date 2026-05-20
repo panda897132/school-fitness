@@ -147,6 +147,7 @@ class MainWindow:
         )
         self.grade_listbox.pack(fill='both', expand=True, padx=4, pady=4)
         self.grade_listbox.bind('<<ListboxSelect>>', self._on_grade_select)
+        self.grade_listbox.bind('<Button-3>', self._show_grade_context_menu)
         
         for i, gname in enumerate(GRADE_NAMES):
             self.grade_listbox.insert(tk.END, f"  {gname}")
@@ -182,9 +183,6 @@ class MainWindow:
         )
         self.class_listbox.pack(fill='both', expand=True, padx=4, pady=(4, 6))
         self.class_listbox.bind('<<ListboxSelect>>', self._on_class_select)
-        # 班级右键菜单
-        self.class_listbox.bind('<Button-3>', self._show_class_context_menu)
-        
         # 班级列表创建后刷新
         self._refresh_class_list()
     
@@ -273,20 +271,17 @@ class MainWindow:
             self.tree.selection_set(item)
             self.context_menu.post(event.x_root, event.y_root)
     
-    def _show_class_context_menu(self, event):
-        """显示班级列表右键菜单"""
-        # 选中右键点击的班级
-        idx = self.class_listbox.nearest(event.y)
+    def _show_grade_context_menu(self, event):
+        """显示年级列表右键菜单"""
+        idx = self.grade_listbox.nearest(event.y)
         if idx >= 0:
-            self.class_listbox.selection_clear(0, tk.END)
-            self.class_listbox.selection_set(idx)
-            self._on_class_select(None)
-        # 班级右键菜单
-        class_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
-        class_menu.add_command(label='添加班级...', command=self._add_class)
-        if self.current_class:
-            class_menu.add_command(label='删除班级', command=self._delete_class)
-        class_menu.post(event.x_root, event.y_root)
+            self.grade_listbox.selection_clear(0, tk.END)
+            self.grade_listbox.selection_set(idx)
+            self._on_grade_select(None)
+        grade_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
+        grade_name = GRADE_NAMES[idx] if idx < len(GRADE_NAMES) else '一年级'
+        grade_menu.add_command(label=f'在"{grade_name}"添加班级...', command=lambda: self._add_class(grade_name))
+        grade_menu.post(event.x_root, event.y_root)
     
     # ========== 事件处理 ==========
     def _on_grade_select(self, event):
@@ -645,7 +640,7 @@ class MainWindow:
             relief='flat', padx=20, pady=6
         ).pack()
     
-    def _add_class(self):
+    def _add_class(self, default_grade_name=None):
         """添加班级"""
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
@@ -664,9 +659,13 @@ class MainWindow:
         grade_row = tk.Frame(frame, bg='white')
         grade_row.pack(fill='x', pady=3)
         tk.Label(grade_row, text='年级：', font=(TK_FONT, 11), bg='white', width=10, anchor='w').pack(side='left')
-        grade_var = tk.StringVar(value='一年级')
+        default_grade = default_grade_name or GRADE_NAMES[0]
+        grade_var = tk.StringVar(value=default_grade)
         grade_combo = ttk.Combobox(grade_row, textvariable=grade_var, values=GRADE_NAMES, state='readonly', width=15, font=(TK_FONT, 11))
-        grade_combo.current(0)
+        if default_grade_name and default_grade_name in GRADE_NAMES:
+            grade_combo.current(GRADE_NAMES.index(default_grade_name))
+        else:
+            grade_combo.current(0)
         grade_combo.pack(side='left', fill='x', expand=True)
         
         # 班级编号行

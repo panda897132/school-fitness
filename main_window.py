@@ -229,11 +229,10 @@ class MainWindow:
         v_scrollbar = tk.Scrollbar(tree_container, orient='vertical')
         v_scrollbar.pack(side='right', fill='y')
         
-        # Treeview 格子线样式
+        # Treeview 格子线样式（深色边框）
         style = ttk.Style()
-        style.configure('Treeview', borderwidth=1, relief='solid', rowheight=26)
-        style.configure('Treeview.Heading', borderwidth=1, relief='solid', font=(TK_FONT, 10, 'bold'))
-        style.layout('Treeview', [('Treeview.treearea', {'sticky': 'nswe'})])
+        style.configure('Treeview', borderwidth=1, relief='solid', rowheight=26, fieldbackground='#bdbdbd')
+        style.configure('Treeview.Heading', borderwidth=1, relief='solid', font=(TK_FONT, 10, 'bold'), background='#e0e0e0')
         
         # Treeview
         self.tree = ttk.Treeview(
@@ -349,6 +348,8 @@ class MainWindow:
         self.class_title_label.config(text=f"{class_data.get('name', self.current_class)} — 学生列表")
         
         students = class_data.get('students', [])
+        # 按总成绩降序排列
+        students.sort(key=lambda s: s.get('total_score', 0) or 0, reverse=True)
         
         for idx, s in enumerate(students):
             self._insert_student_row(s, idx + 1)
@@ -386,11 +387,15 @@ class MainWindow:
             student.get('total_grade', '')
         ]
         
-        # 根据等级设置行颜色
+        # 根据等级设置行颜色（四种等级对应四种底色）
         grade_level = student.get('total_grade', '')
         tags = []
         if grade_level == '优秀':
             tags.append('excellent')
+        elif grade_level == '良好':
+            tags.append('good')
+        elif grade_level == '及格':
+            tags.append('pass')
         elif grade_level == '不及格':
             tags.append('fail')
         
@@ -400,9 +405,11 @@ class MainWindow:
         # 记录 iid→真实ID 映射，后续编辑/删除时可通过映射找回真实ID
         self._iid_to_sid[iid] = sid
         
-        # 配置 tag 颜色
-        self.tree.tag_configure('excellent', background='#e8f5e9')
-        self.tree.tag_configure('fail', background='#ffebee')
+        # 配置等级 tag 颜色（底色 + 文字色）
+        self.tree.tag_configure('excellent', background='#c8e6c9', foreground='#1b5e20')
+        self.tree.tag_configure('good', background='#bbdefb', foreground='#0d47a1')
+        self.tree.tag_configure('pass', background='#fff9c4', foreground='#e65100')
+        self.tree.tag_configure('fail', background='#ffcdd2', foreground='#b71c1c')
     
     def _format_run_time(self, val):
         """格式化折返跑时间"""

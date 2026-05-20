@@ -3,6 +3,7 @@
 import sys
 import os
 import traceback
+import tkinter.messagebox as msgbox
 
 # 确保在正确的目录运行
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +27,6 @@ def main():
                 main_win = MainWindow(dm)
                 main_win.run()
             except Exception as e:
-                import tkinter.messagebox as msgbox
                 msgbox.showerror('错误', f'启动主窗口失败:\n{traceback.format_exc()}')
                 raise
         
@@ -41,7 +41,6 @@ def main():
             "  pip install openpyxl matplotlib pillow"
         )
         try:
-            import tkinter.messagebox as msgbox
             msgbox.showerror('依赖缺失', msg)
         except Exception:
             print(msg, file=sys.stderr)
@@ -49,7 +48,6 @@ def main():
     
     except Exception as e:
         try:
-            import tkinter.messagebox as msgbox
             msgbox.showerror('启动失败', f'程序启动失败:\n{traceback.format_exc()}')
         except Exception:
             print(f'启动失败: {traceback.format_exc()}', file=sys.stderr)

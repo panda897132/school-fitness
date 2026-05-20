@@ -2,15 +2,17 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
-import os
+import re
+import threading
 import openpyxl
 from config import (
     MAIN_WINDOW_SIZE, APP_TITLE, GRADE_NAMES, GRADE_ITEMS,
     STUDENT_COLUMNS, TK_FONT
 )
-from score_engine import calc_bmi_score, calc_total_score
+from score_engine import apply_scores_to_student
 from excel_io import import_from_excel, export_statistics_report
 from charts import ChartBuilder
+from utils import center_window
 
 
 class MainWindow:
@@ -23,26 +25,17 @@ class MainWindow:
         self.window.title(APP_TITLE)
         
         w, h = MAIN_WINDOW_SIZE
-        self._center_window(self.window, w, h)
+        center_window(self.window, w, h)
         self.window.minsize(900, 500)
         
         self.current_grade = 1  # 当前选中的年级（默认一年级）
         self.current_class = None  # 当前选中的班级
-        
-        # 缓存学生数据
-        self._student_cache = {}
+        self._iid_to_sid = {}  # TreeView iid → 真实 student_id 映射
+        self._importing = False  # 导入锁，防止并发导入
         
         self._build_menu()
         self._build_ui()
         self._setup_close_handler()
-    
-    def _center_window(self, win, width, height):
-        """窗口居中"""
-        screen_w = win.winfo_screenwidth()
-        screen_h = win.winfo_screenheight()
-        x = (screen_w - width) // 2
-        y = (screen_h - height) // 2
-        win.geometry(f"{width}x{height}+{x}+{y}")
     
     def _setup_close_handler(self):
         """设置关闭处理"""
@@ -58,35 +51,35 @@ class MainWindow:
         self.window.config(menu=menubar)
         
         # 文件菜单
-        file_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
-        menubar.add_cascade(label='文件', menu=file_menu)
-        file_menu.add_command(label='导入Excel数据...', command=self._import_excel, accelerator='Ctrl+I')
-        file_menu.add_command(label='导出统计报告...', command=self._export_report, accelerator='Ctrl+E')
-        file_menu.add_separator()
-        file_menu.add_command(label='修改密码...', command=self._change_password)
-        file_menu.add_separator()
-        file_menu.add_command(label='退出', command=self._on_close, accelerator='Ctrl+Q')
+        self.file_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
+        menubar.add_cascade(label='文件', menu=self.file_menu)
+        self.file_menu.add_command(label='导入Excel数据...', command=self._import_excel, accelerator='Ctrl+I')
+        self.file_menu.add_command(label='导出统计报告...', command=self._export_report, accelerator='Ctrl+E')
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='修改密码...', command=self._change_password)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='退出', command=self._on_close, accelerator='Ctrl+Q')
         
         # 数据菜单
-        data_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
-        menubar.add_cascade(label='数据', menu=data_menu)
-        data_menu.add_command(label='添加班级...', command=self._add_class)
-        data_menu.add_command(label='删除班级', command=self._delete_class)
-        data_menu.add_separator()
-        data_menu.add_command(label='添加学生...', command=self._add_student)
-        data_menu.add_command(label='编辑学生...', command=self._edit_student)
-        data_menu.add_command(label='删除学生', command=self._delete_student)
-        data_menu.add_separator()
-        data_menu.add_command(label='重新计算全部分数', command=self._recalc_all_scores)
+        self.data_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
+        menubar.add_cascade(label='数据', menu=self.data_menu)
+        self.data_menu.add_command(label='添加班级...', command=self._add_class)
+        self.data_menu.add_command(label='删除班级', command=self._delete_class)
+        self.data_menu.add_separator()
+        self.data_menu.add_command(label='添加学生...', command=self._add_student)
+        self.data_menu.add_command(label='编辑学生...', command=self._edit_student)
+        self.data_menu.add_command(label='删除学生', command=self._delete_student)
+        self.data_menu.add_separator()
+        self.data_menu.add_command(label='重新计算全部分数', command=self._recalc_all_scores)
         
         # 统计菜单
-        stats_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
-        menubar.add_cascade(label='统计', menu=stats_menu)
-        stats_menu.add_command(label='班级统计', command=lambda: self._show_chart('班级'))
-        stats_menu.add_command(label='年级统计', command=lambda: self._show_chart('年级'))
-        stats_menu.add_command(label='全校统计', command=lambda: self._show_chart('全校'))
-        stats_menu.add_command(label='年级趋势', command=lambda: self._show_chart('趋势'))
-        stats_menu.add_command(label='项目分析', command=lambda: self._show_chart('雷达图'))
+        self.stats_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
+        menubar.add_cascade(label='统计', menu=self.stats_menu)
+        self.stats_menu.add_command(label='班级统计', command=lambda: self._show_chart('班级'))
+        self.stats_menu.add_command(label='年级统计', command=lambda: self._show_chart('年级'))
+        self.stats_menu.add_command(label='全校统计', command=lambda: self._show_chart('全校'))
+        self.stats_menu.add_command(label='年级趋势', command=lambda: self._show_chart('趋势'))
+        self.stats_menu.add_command(label='项目分析', command=lambda: self._show_chart('雷达图'))
         
         # 帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
@@ -193,11 +186,12 @@ class MainWindow:
         # 添加班级按钮
         btn_frame = tk.Frame(parent, bg='#f5f5f5')
         btn_frame.pack(fill='x', padx=4, pady=(2, 6))
-        tk.Button(
+        self.add_class_btn = tk.Button(
             btn_frame, text='+ 添加班级', command=self._add_class,
             bg='#1a73e8', fg='white', font=(TK_FONT, 9),
             relief='flat', padx=10, pady=4
-        ).pack(side='left')
+        )
+        self.add_class_btn.pack(side='left')
         
         # 班级列表创建后刷新
         self._refresh_class_list()
@@ -332,6 +326,7 @@ class MainWindow:
         # 清空
         for item in self.tree.get_children():
             self.tree.delete(item)
+        self._iid_to_sid.clear()
         
         if self.current_class is None:
             self.class_title_label.config(text='请选择年级和班级')
@@ -390,7 +385,11 @@ class MainWindow:
         elif grade_level == '不及格':
             tags.append('fail')
         
-        self.tree.insert('', tk.END, values=values, tags=tags, iid=student.get('id', ''))
+        sid = student.get('id')
+        iid = sid if sid else f'tmp_{id(student)}'
+        self.tree.insert('', tk.END, values=values, tags=tags, iid=iid)
+        # 记录 iid→真实ID 映射，后续编辑/删除时可通过映射找回真实ID
+        self._iid_to_sid[iid] = sid
         
         # 配置 tag 颜色
         self.tree.tag_configure('excellent', background='#e8f5e9')
@@ -431,14 +430,30 @@ class MainWindow:
         """更新状态栏"""
         self.status_bar.config(text=text)
     
+    def _set_buttons_state(self, state):
+        """设置所有操作按钮状态（normal/disabled），导入期间禁用防止重复点击"""
+        for menu in (self.file_menu, self.data_menu, self.stats_menu):
+            for idx in range(menu.index('end') + 1):
+                try:
+                    menu.entryconfigure(idx, state=state)
+                except tk.TclError:
+                    pass  # separator 不可改 state
+        if hasattr(self, 'add_class_btn'):
+            self.add_class_btn.config(state=state)
+    
     # ========== 菜单命令 ==========
     def _import_excel(self):
         """导入Excel数据"""
+        if self._importing:
+            return
+        self._importing = True
+        
         filepath = filedialog.askopenfilename(
             title='选择Excel文件',
             filetypes=[('Excel文件', '*.xlsx *.xls'), ('所有文件', '*.*')]
         )
         if not filepath:
+            self._importing = False
             return
         
         self._update_status('正在检查文件格式...')
@@ -476,10 +491,23 @@ class MainWindow:
             pass  # 检测失败则走自动推断路径
         
         self._update_status('正在导入...')
-        self.window.update()
         
-        result = import_from_excel(filepath, grade_hint=grade_hint, class_prefix=class_prefix)
+        # 禁用按钮，防止重复点击
+        self._set_buttons_state('disabled')
         
+        def do_import():
+            """在 worker 线程中执行 Excel 解析（绝不访问 GUI 控件）"""
+            try:
+                result = import_from_excel(filepath, grade_hint=grade_hint, class_prefix=class_prefix)
+                self.window.after(0, lambda r=result: self._on_import_done(r))
+            except Exception as e:
+                self.window.after(0, lambda e_msg=str(e): self._on_import_error(e_msg))
+        
+        t = threading.Thread(target=do_import, daemon=True)
+        t.start()
+    
+    def _on_import_done(self, result):
+        """导入完成回调（主线程）"""
         if result['success']:
             # 合并导入的数据
             classes = result['data'].get('classes', {})
@@ -512,6 +540,15 @@ class MainWindow:
             messagebox.showerror('导入失败', result['message'])
         
         self._update_status('就绪')
+        self._set_buttons_state('normal')
+        self._importing = False
+    
+    def _on_import_error(self, error_msg):
+        """导入异常回调（主线程）"""
+        messagebox.showerror("导入错误", f"导入过程异常:\n{error_msg}")
+        self._update_status('就绪')
+        self._set_buttons_state('normal')
+        self._importing = False
     
     def _export_report(self):
         """导出统计报告"""
@@ -610,7 +647,7 @@ class MainWindow:
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        self._center_window(dialog, 350, 230)
+        center_window(dialog, 350, 230)
         
         frame = tk.Frame(dialog, bg='white')
         frame.pack(fill='both', expand=True, padx=25, pady=25)
@@ -707,7 +744,8 @@ class MainWindow:
         if not sel:
             messagebox.showwarning('提示', '请先选择学生')
             return
-        student_id = sel[0]
+        iid = sel[0]
+        student_id = self._iid_to_sid.get(iid, iid)
         self._student_dialog(mode='edit', student_id=student_id)
     
     def _delete_student(self):
@@ -718,8 +756,9 @@ class MainWindow:
             return
         
         if messagebox.askyesno('确认删除', '确定要删除该学生吗？'):
-            for sid in sel:
-                self.dm.delete_student(self.current_class, sid)
+            for iid in sel:
+                real_sid = self._iid_to_sid.get(iid, iid)
+                self.dm.delete_student(self.current_class, real_sid)
             self._refresh_student_table()
             self._update_status('学生已删除')
     
@@ -731,7 +770,7 @@ class MainWindow:
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        self._center_window(dialog, 500, 650)
+        center_window(dialog, 500, 650)
         
         # 已存在的学生数据
         student_data = {}
@@ -859,7 +898,6 @@ class MainWindow:
                 val = var.get().strip()
                 if val:
                     if '折返跑' in item_name:
-                        import re
                         m = re.match(r"(\d+)'(\d+)", val)
                         if m:
                             data['tests'][item_name] = float(m.group(1)) * 60 + float(m.group(2))
@@ -877,20 +915,8 @@ class MainWindow:
                 else:
                     data['tests'][item_name] = None
             
-            # 计算BMI和评分
-            if data['height'] and data['weight']:
-                bmi, bmi_grade, bmi_score = calc_bmi_score(
-                    data['height'], data['weight'], data['gender'], self.current_grade or 1
-                )
-                data['bmi'] = bmi
-                data['bmi_grade'] = bmi_grade
-                data['bmi_score'] = bmi_score
-            
-            # 计算总分
-            score_result = calc_total_score(data, self.current_grade or 1)
-            data['scores'] = score_result.get('item_scores', {})
-            data['total_score'] = score_result.get('total_score', 0)
-            data['total_grade'] = score_result.get('total_grade', '')
+            # 计算全部得分
+            apply_scores_to_student(data, self.current_grade or 1)
             
             if mode == 'add':
                 success, msg = self.dm.add_student(self.current_class, data)
@@ -929,16 +955,7 @@ class MainWindow:
             students = cdata.get('students', [])
             
             for s in students:
-                score_result = calc_total_score(s, grade)
-                h = s.get('height')
-                w = s.get('weight')
-                if h and w:
-                    s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
-                else:
-                    s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
-                s['scores'] = score_result.get('item_scores', {})
-                s['total_score'] = score_result.get('total_score', 0)
-                s['total_grade'] = score_result.get('total_grade', '')
+                apply_scores_to_student(s, grade)
                 count += 1
             
             self.dm.import_students(cid, students)
@@ -953,20 +970,11 @@ class MainWindow:
             return
         
         students = self.dm.get_students(self.current_class)
-        for sid in sel:
+        for iid in sel:
+            real_sid = self._iid_to_sid.get(iid, iid)
             for s in students:
-                if s.get('id') == sid:
-                    grade = self.current_grade or 1
-                    score_result = calc_total_score(s, grade)
-                    h = s.get('height')
-                    w = s.get('weight')
-                    if h and w:
-                        s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
-                    else:
-                        s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
-                    s['scores'] = score_result.get('item_scores', {})
-                    s['total_score'] = score_result.get('total_score', 0)
-                    s['total_grade'] = score_result.get('total_grade', '')
+                if s.get('id') == real_sid:
+                    apply_scores_to_student(s, self.current_grade or 1)
         
         self.dm.import_students(self.current_class, students)
         self._refresh_student_table()
@@ -978,16 +986,7 @@ class MainWindow:
             students = cdata.get('students', [])
             
             for s in students:
-                score_result = calc_total_score(s, grade)
-                h = s.get('height')
-                w = s.get('weight')
-                if h and w:
-                    s['bmi'], s['bmi_grade'], s['bmi_score'] = calc_bmi_score(h, w, s.get('gender', '男'), grade)
-                else:
-                    s['bmi'], s['bmi_grade'], s['bmi_score'] = (None, '', 0)
-                s['scores'] = score_result.get('item_scores', {})
-                s['total_score'] = score_result.get('total_score', 0)
-                s['total_grade'] = score_result.get('total_grade', '')
+                apply_scores_to_student(s, grade)
     
     # ========== 统计图表 ==========
     def _show_chart(self, chart_type):
@@ -997,7 +996,7 @@ class MainWindow:
         dialog.geometry('800x600')
         dialog.resizable(True, True)
         dialog.transient(self.window)
-        self._center_window(dialog, 800, 600)
+        center_window(dialog, 800, 600)
         
         frame = tk.Frame(dialog, bg='white')
         frame.pack(fill='both', expand=True)

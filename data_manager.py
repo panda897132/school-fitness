@@ -3,12 +3,26 @@
 import json
 import os
 import hashlib
+import secrets
 from config import DATA_DIR, STUDENTS_FILE, CONFIG_FILE, GRADE_ITEMS
 
 
-def _hash_password(password):
-    """简单的密码哈希"""
-    return hashlib.sha256(password.encode()).hexdigest()
+def _hash_password(password, salt=None):
+    """带盐 PBKDF2-SHA256 密码哈希"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}${h.hex()}"
+
+
+def _verify_password(stored_hash, password):
+    """验证密码（兼容旧版无盐 SHA256 格式）"""
+    if '$' in stored_hash:
+        salt, _ = stored_hash.split('$', 1)
+        return stored_hash == _hash_password(password, salt)
+    else:
+        # 旧版格式：纯 SHA256 hexdigest（无盐）
+        return stored_hash == hashlib.sha256(password.encode()).hexdigest()
 
 
 class DataManager:
@@ -23,6 +37,9 @@ class DataManager:
         
         os.makedirs(self.data_dir, exist_ok=True)
         
+        # 惰性缓存：首次加载后缓存，写操作同步更新，避免重复读盘
+        self._students_cache = None
+        
         # 初始化默认数据
         self._init_defaults()
     
@@ -32,14 +49,23 @@ class DataManager:
             self._save_students({"classes": {}})
         
         if not os.path.exists(self.config_path):
+            initial_password = secrets.token_urlsafe(8)
             default_config = {
                 "school_name": "诸葛镇中心小学",
                 "users": {
-                    "admin": _hash_password("admin123")
+                    "admin": _hash_password(initial_password)
                 }
             }
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            tmp = self.config_path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(default_config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.config_path)
+            print(f"\n{'='*60}")
+            print(f"  系统首次启动，已生成管理员账号")
+            print(f"  用户名: admin")
+            print(f"  初始密码: {initial_password}")
+            print(f"  请妥善保管，登录后立即修改密码")
+            print(f"{'='*60}\n")
     
     # ---- 认证 ----
     def verify_login(self, username, password):
@@ -49,7 +75,7 @@ class DataManager:
                 config = json.load(f)
             users = config.get('users', {})
             stored_hash = users.get(username)
-            if stored_hash and stored_hash == _hash_password(password):
+            if stored_hash and _verify_password(stored_hash, password):
                 return True
             return False
         except Exception:
@@ -61,27 +87,39 @@ class DataManager:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             users = config.get('users', {})
-            if users.get(username) != _hash_password(old_password):
+            stored_hash = users.get(username)
+            if not stored_hash or not _verify_password(stored_hash, old_password):
                 return False
             users[username] = _hash_password(new_password)
             config['users'] = users
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            tmp = self.config_path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.config_path)
             return True
         except Exception:
             return False
     
     # ---- 班级管理 ----
     def _load_students(self):
-        try:
-            with open(self.students_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {"classes": {}}
+        if self._students_cache is None:
+            try:
+                with open(self.students_path, 'r', encoding='utf-8') as f:
+                    self._students_cache = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                self._students_cache = {"classes": {}}
+        return self._students_cache
     
     def _save_students(self, data):
-        with open(self.students_path, 'w', encoding='utf-8') as f:
+        self._students_cache = data
+        tmp = self.students_path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, self.students_path)  # 原子替换，避免写一半崩溃导致文件损坏
+
+    def flush(self):
+        """手动刷新缓存（从磁盘重新加载）"""
+        self._students_cache = None
     
     def get_all_classes(self):
         """获取所有班级"""

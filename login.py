@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from config import LOGIN_WINDOW_SIZE, APP_TITLE, DEFAULT_USERNAME, TK_FONT
+from utils import center_window
 
 
 class LoginWindow:
@@ -23,17 +24,9 @@ class LoginWindow:
         
         # 窗口居中
         w, h = LOGIN_WINDOW_SIZE
-        self._center_window(self.window, w, h)
+        center_window(self.window, w, h)
         
         self._build_ui()
-    
-    def _center_window(self, win, width, height):
-        """窗口居中"""
-        screen_w = win.winfo_screenwidth()
-        screen_h = win.winfo_screenheight()
-        x = (screen_w - width) // 2
-        y = (screen_h - height) // 2
-        win.geometry(f"{width}x{height}+{x}+{y}")
     
     def _build_ui(self):
         """构建登录界面"""

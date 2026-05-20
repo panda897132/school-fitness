@@ -81,6 +81,11 @@ def import_from_excel(filepath, grade_hint=None, class_prefix=None):
         }
     """
     try:
+        # NOTE: 未使用 read_only=True。旧/新格式导入均大量使用 ws.cell(r,c).value
+        # 随机访问模式，read_only 下不支持，必须改用 iter_rows() 遍历。
+        # 改写工作量较大（~60+处 .cell() 调用需逐一改为迭代器索引映射）。
+        # 格式快速检测（main_window.py:448）已使用 read_only=True 降低内存峰值。
+        # 后续如有大文件需求，可优先将 _import_new_format 改为 iter_rows 方式。
         wb = openpyxl.load_workbook(filepath, data_only=True)
     except Exception as e:
         return {"success": False, "message": f"无法打开文件: {e}", "data": None}

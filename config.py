@@ -3,7 +3,7 @@
 SCHOOL_NAME = "诸葛镇中心小学"
 APP_TITLE = f"{SCHOOL_NAME} — 学生体质健康管理系统"
 DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "admin123"
+# 密码不再以明文常量定义，首次启动时自动生成随机密码并由 data_manager 打印到终端
 
 # 年级定义
 GRADE_NAMES = ["一年级", "二年级", "三年级", "四年级", "五年级", "六年级"]

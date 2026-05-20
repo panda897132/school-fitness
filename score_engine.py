@@ -155,7 +155,10 @@ def calc_bmi_score(height, weight, gender, grade):
         lo, hi, lo_inc, hi_inc = _parse_bmi_range(range_str)
         if _bmi_in_range(bmi, lo, hi, lo_inc, hi_inc):
             grade_rank = entry.get('grade_rank', '')
-            bmi_score = entry.get('bmi_score', 0) or 0
+            # 保护：bmi_score 为 None/0 时使用 entry.score 或合理默认值
+            bmi_score = entry.get('bmi_score')
+            if bmi_score is None or bmi_score == 0:
+                bmi_score = entry.get('score', 0) or 0  # fallback to score field
             return bmi, grade_rank, bmi_score
     
     # 如果没有匹配，检查极端情况

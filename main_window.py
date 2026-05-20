@@ -180,18 +180,10 @@ class MainWindow:
             selectbackground='#1976d2',
             selectforeground='white'
         )
-        self.class_listbox.pack(fill='both', expand=True, padx=4, pady=(4, 0))
+        self.class_listbox.pack(fill='both', expand=True, padx=4, pady=(4, 6))
         self.class_listbox.bind('<<ListboxSelect>>', self._on_class_select)
-        
-        # 添加班级按钮
-        btn_frame = tk.Frame(parent, bg='#f5f5f5')
-        btn_frame.pack(fill='x', padx=4, pady=(2, 6))
-        self.add_class_btn = tk.Button(
-            btn_frame, text='+ 添加班级', command=self._add_class,
-            bg='#1a73e8', fg='white', font=(TK_FONT, 9),
-            relief='flat', padx=10, pady=4
-        )
-        self.add_class_btn.pack(side='left')
+        # 班级右键菜单
+        self.class_listbox.bind('<Button-3>', self._show_class_context_menu)
         
         # 班级列表创建后刷新
         self._refresh_class_list()
@@ -265,7 +257,7 @@ class MainWindow:
         self._build_context_menu()
     
     def _build_context_menu(self):
-        """右键菜单"""
+        """学生表格右键菜单"""
         self.context_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         self.context_menu.add_command(label='编辑学生', command=self._edit_student)
         self.context_menu.add_command(label='删除学生', command=self._delete_student)
@@ -275,11 +267,26 @@ class MainWindow:
         self.tree.bind('<Button-3>', self._show_context_menu)
     
     def _show_context_menu(self, event):
-        """显示右键菜单"""
+        """显示学生表格右键菜单"""
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
             self.context_menu.post(event.x_root, event.y_root)
+    
+    def _show_class_context_menu(self, event):
+        """显示班级列表右键菜单"""
+        # 选中右键点击的班级
+        idx = self.class_listbox.nearest(event.y)
+        if idx >= 0:
+            self.class_listbox.selection_clear(0, tk.END)
+            self.class_listbox.selection_set(idx)
+            self._on_class_select(None)
+        # 班级右键菜单
+        class_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
+        class_menu.add_command(label='添加班级...', command=self._add_class)
+        if self.current_class:
+            class_menu.add_command(label='删除班级', command=self._delete_class)
+        class_menu.post(event.x_root, event.y_root)
     
     # ========== 事件处理 ==========
     def _on_grade_select(self, event):
@@ -438,8 +445,7 @@ class MainWindow:
                     menu.entryconfigure(idx, state=state)
                 except tk.TclError:
                     pass  # separator 不可改 state
-        if hasattr(self, 'add_class_btn'):
-            self.add_class_btn.config(state=state)
+        # add_class_btn 已移除，改用班级右键菜单
     
     # ========== 菜单命令 ==========
     def _import_excel(self):

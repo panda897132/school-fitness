@@ -337,15 +337,16 @@ class MainWindow:
             else: return '不及格'
         
         def calc_stats(scores_or_key):
-            """统计某项目(或总成绩)的等级分布, 返回 {等级: (人数, 百分比)}"""
+            """统计某项目(或总成绩)的等级分布"""
             counts = {'优秀': 0, '良好': 0, '及格': 0, '不及格': 0}
             valid = 0
             for s in students:
                 if callable(scores_or_key):
                     level = scores_or_key(s)
+                elif scores_or_key == 'total_score':
+                    level = get_grade_level(s.get('total_score'))
                 else:
-                    val = s.get('scores', {}).get(scores_or_key) if isinstance(scores_or_key, str) else s.get('total_score')
-                    level = get_grade_level(val)
+                    level = get_grade_level(s.get('scores', {}).get(scores_or_key))
                 if level:
                     counts[level] += 1
                     valid += 1
@@ -788,22 +789,21 @@ class MainWindow:
         
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
-        dialog.geometry('340x350')
+        dialog.geometry('340x310')
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        center_window(dialog, 340, 350)
+        center_window(dialog, 340, 310)
         self._add_class_dialog = dialog
         dialog.protocol('WM_DELETE_WINDOW', lambda: (setattr(self, '_add_class_dialog', None), dialog.destroy()))
-        # 任意方式关闭对话框时清除引用
         dialog.bind('<Destroy>', lambda e: setattr(self, '_add_class_dialog', None))
         
         frame = tk.Frame(dialog, bg='white')
-        frame.pack(fill='both', expand=True, padx=20, pady=12)
+        frame.pack(fill='both', expand=True, padx=20, pady=10)
         
         # 年级行
         grade_row = tk.Frame(frame, bg='white')
-        grade_row.pack(fill='x', pady=3)
+        grade_row.pack(fill='x', pady=(0, 8))
         tk.Label(grade_row, text='年级：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
         default_grade = default_grade_name or GRADE_NAMES[0]
         grade_var = tk.StringVar(value=default_grade)
@@ -814,28 +814,25 @@ class MainWindow:
             grade_combo.current(0)
         grade_combo.pack(side='left', fill='x', expand=True)
         
-        # 已有班级列表
-        tk.Label(frame, text='已有班级：', font=(TK_FONT, 11), bg='white', fg='#555', anchor='w').pack(fill='x', pady=(10, 2))
-        
-        existing_frame = tk.Frame(frame, bg='#f5f5f5', relief='solid', bd=1)
-        existing_frame.pack(fill='x', pady=(0, 8))
-        existing_label = tk.Label(
-            existing_frame, text='', font=(TK_FONT, 9), bg='#f5f5f5', fg='#666',
-            justify='left', anchor='w', wraplength=320
-        )
-        existing_label.pack(fill='x', padx=8, pady=6)
-        
         # 班级编号行
         id_row = tk.Frame(frame, bg='white')
-        id_row.pack(fill='x', pady=3)
+        id_row.pack(fill='x', pady=(0, 4))
         tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
         class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), width=18)
-        class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
+        class_id_entry.pack(side='left', fill='x', expand=True, ipady=3)
         class_id_entry.bind('<Return>', lambda e: do_add())
         
-        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(2, 6))
+        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(0, 8))
         
-        # 年级切换时：刷新已有班级列表 + 自动更新默认编号
+        # 已有班级（紧凑行显示）
+        existing_frame = tk.Frame(frame, bg='#f5f5f5', relief='solid', bd=1)
+        existing_frame.pack(fill='x', pady=(0, 10))
+        existing_label = tk.Label(
+            existing_frame, text='', font=(TK_FONT, 9), bg='#f5f5f5', fg='#666',
+            justify='left', anchor='w', wraplength=290
+        )
+        existing_label.pack(fill='x', padx=8, pady=5)
+        
         def _refresh_existing():
             grade_name = grade_var.get()
             grade_num = CN_TO_NUM.get(grade_name[0], 0)
@@ -843,10 +840,9 @@ class MainWindow:
                 all_classes = self.dm.get_classes_by_grade(grade_num)
                 if all_classes:
                     items = [f'{cid}' for cid in sorted(all_classes.keys())]
-                    existing_label.config(text='  '.join(items), fg='#333')
+                    existing_label.config(text='已存在: ' + '  '.join(items), fg='#333')
                 else:
-                    existing_label.config(text='（暂无班级）', fg='#999')
-                # 自动设置默认编号: 1年级→101, 6年级→601
+                    existing_label.config(text='暂无班级', fg='#999')
                 class_id_entry.delete(0, tk.END)
                 class_id_entry.insert(0, f'{grade_num}01')
         

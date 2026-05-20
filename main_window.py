@@ -67,10 +67,6 @@ class MainWindow:
         self.data_menu.add_command(label='添加班级...', command=self._add_class)
         self.data_menu.add_command(label='删除班级', command=self._delete_class)
         self.data_menu.add_separator()
-        self.data_menu.add_command(label='添加学生...', command=self._add_student)
-        self.data_menu.add_command(label='编辑学生...', command=self._edit_student)
-        self.data_menu.add_command(label='删除学生', command=self._delete_student)
-        self.data_menu.add_separator()
         self.data_menu.add_command(label='重新计算全部分数', command=self._recalc_all_scores)
         
         # 统计菜单

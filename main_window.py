@@ -646,16 +646,14 @@ class MainWindow:
         
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
-        dialog.geometry('380x430')
+        dialog.geometry('380x390')
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        center_window(dialog, 380, 430)
+        center_window(dialog, 380, 390)
         
         frame = tk.Frame(dialog, bg='white')
-        frame.pack(fill='both', expand=True, padx=20, pady=15)
-        
-        tk.Label(frame, text='➕ 添加新班级', font=(TK_FONT, 14, 'bold'), bg='white', fg='#333').pack(pady=(0, 10))
+        frame.pack(fill='both', expand=True, padx=20, pady=12)
         
         # 年级行
         grade_row = tk.Frame(frame, bg='white')
@@ -681,32 +679,35 @@ class MainWindow:
         )
         existing_label.pack(fill='x', padx=8, pady=6)
         
+        # 班级编号行
+        id_row = tk.Frame(frame, bg='white')
+        id_row.pack(fill='x', pady=3)
+        tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
+        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), width=18)
+        class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
+        class_id_entry.bind('<Return>', lambda e: do_add())
+        
+        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(2, 6))
+        
+        # 年级切换时：刷新已有班级列表 + 自动更新默认编号
         def _refresh_existing():
             grade_name = grade_var.get()
             grade_num = CN_TO_NUM.get(grade_name[0], 0)
             if grade_num:
                 all_classes = self.dm.get_classes_by_grade(grade_num)
                 if all_classes:
-                    names = [c.get('name', cid) for cid, c in sorted(all_classes.items())]
-                    existing_label.config(text='  '.join(names), fg='#333')
+                    items = [f'{cid}' for cid in sorted(all_classes.keys())]
+                    existing_label.config(text='  '.join(items), fg='#333')
                 else:
                     existing_label.config(text='（暂无班级）', fg='#999')
+                # 自动设置默认编号: 1年级→101, 6年级→601
+                class_id_entry.delete(0, tk.END)
+                class_id_entry.insert(0, f'{grade_num}01')
         
         grade_combo.bind('<<ComboboxSelected>>', lambda e: _refresh_existing())
         _refresh_existing()
-        
-        # 班级编号行 — Label宽度与年级对齐
-        id_row = tk.Frame(frame, bg='white')
-        id_row.pack(fill='x', pady=3)
-        tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg='white', width=8, anchor='w').pack(side='left')
-        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), width=18)
-        class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
-        class_id_entry.insert(0, '101')
         class_id_entry.focus_set()
         class_id_entry.select_range(0, 'end')
-        class_id_entry.bind('<Return>', lambda e: do_add())
-        
-        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg='white', fg='#999').pack(anchor='w', pady=(2, 6))
         
         def do_add():
             grade_name = grade_var.get()
@@ -730,7 +731,7 @@ class MainWindow:
             else:
                 messagebox.showerror('失败', msg, parent=dialog)
         
-        # 按钮行 — 紧贴内容
+        # 按钮行
         btn_row = tk.Frame(frame, bg='white')
         btn_row.pack(fill='x', pady=(6, 0))
         tk.Button(

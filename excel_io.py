@@ -272,6 +272,9 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
             'total_score': 0,
             'total_grade': ''
         }
+        # 跳过非学生行（如模板中的"单项占比率""总成绩占比率"等汇总行）
+        if '占比' in str(name_cell):
+            continue
         students.append(student)
     
     return {
@@ -396,6 +399,10 @@ def _import_old_format(wb, grade_sheet_names):
                 
                 # 姓名
                 name = str(name_cell).strip()
+                
+                # 跳过非学生行（模板中的"单项占比率""总成绩占比率"等）
+                if '占比' in name:
+                    continue
                 
                 # 学籍号
                 student_code = ''

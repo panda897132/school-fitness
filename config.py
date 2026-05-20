@@ -59,6 +59,7 @@ CONFIG_FILE = "data/app_config.json"
 
 # 学生表格列定义（对齐模板格式：每个测试项目后紧跟得分列）
 STUDENT_COLUMNS = [
+    ("序号", 40),
     ("姓名", 80),
     ("性别", 50),
     ("身高", 70),

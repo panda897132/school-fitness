@@ -229,6 +229,12 @@ class MainWindow:
         v_scrollbar = tk.Scrollbar(tree_container, orient='vertical')
         v_scrollbar.pack(side='right', fill='y')
         
+        # Treeview 格子线样式
+        style = ttk.Style()
+        style.configure('Treeview', borderwidth=1, relief='solid', rowheight=26)
+        style.configure('Treeview.Heading', borderwidth=1, relief='solid', font=(TK_FONT, 10, 'bold'))
+        style.layout('Treeview', [('Treeview.treearea', {'sticky': 'nswe'})])
+        
         # Treeview
         self.tree = ttk.Treeview(
             tree_container,
@@ -344,19 +350,20 @@ class MainWindow:
         
         students = class_data.get('students', [])
         
-        for s in students:
-            self._insert_student_row(s)
+        for idx, s in enumerate(students):
+            self._insert_student_row(s, idx + 1)
         
         # 更新统计
         self._update_class_stats(students)
         self._update_status(f"当前班级: {class_data.get('name', '')} | 学生数: {len(students)}")
     
-    def _insert_student_row(self, student):
+    def _insert_student_row(self, student, row_num=0):
         """插入学生行（列顺序对齐模板格式）"""
         tests = student.get('tests', {})
         scores = student.get('scores', {})
         
         values = [
+            row_num,
             student.get('name', ''),
             student.get('gender', ''),
             student.get('height', ''),

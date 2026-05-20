@@ -8,7 +8,7 @@ a = Analysis(
         ('icon.png', '.'),
         ('data/', 'data/'),
     ],
-    hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl'],
+    hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl', 'numpy', 'utils'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

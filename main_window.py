@@ -788,11 +788,11 @@ class MainWindow:
         
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
-        dialog.geometry('380x390')
+        dialog.geometry('340x350')
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        center_window(dialog, 380, 390)
+        center_window(dialog, 340, 350)
         self._add_class_dialog = dialog
         dialog.protocol('WM_DELETE_WINDOW', lambda: (setattr(self, '_add_class_dialog', None), dialog.destroy()))
         # 任意方式关闭对话框时清除引用
@@ -992,11 +992,6 @@ class MainWindow:
             return var
         
         row = 0
-        tk.Label(scroll_frame, text='添加学生' if mode == 'add' else '编辑学生', 
-                font=(TK_FONT, 14, 'bold'), bg='white', fg='#1976d2').grid(
-            row=row, column=0, columnspan=2, pady=(15, 10))
-        row += 1
-        
         # 基本信息（对齐模板列顺序：姓名→性别→身高→体重）
         v_name = add_field('姓名:', 'name', row, student_data.get('name', ''))
         row += 1

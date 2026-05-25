@@ -131,7 +131,7 @@ def calc_bmi_score(height, weight, gender, grade):
         (bmi_value, bmi_grade, bmi_score)
         bmi_grade: '正常'/'低体重'/'超重'/'肥胖'
     """
-    if height is None or weight is None or height <= 0:
+    if height is None or weight is None or height <= 0 or weight <= 0:
         return None, None, 0
     
     height_m = height / 100.0
@@ -226,6 +226,17 @@ def calc_item_score(value, gender, grade, item_name):
     if value is None:
         return 0
     
+    # 折返跑项目：自动检测分.秒格式并转为纯秒数
+    # 如 1.43 → 1分43秒 → 103秒
+    if '折返跑' in item_name and isinstance(value, (int, float)) and 0.5 <= value < 10.0:
+        minutes = int(value)
+        seconds_part = round((value - minutes) * 100)
+        if 0 <= seconds_part < 60:
+            value = minutes * 60 + seconds_part
+    
+    LOWER_IS_BETTER_KEYWORDS = ['50米', '折返跑', '跑']
+    is_running = any(kw in item_name for kw in LOWER_IS_BETTER_KEYWORDS)
+    
     item_name = _normalize_item_name(item_name, grade)
     
     standards = _load_standards()
@@ -263,8 +274,11 @@ def calc_item_score(value, gender, grade, item_name):
         return parsed[0][0]
     
     # 语义判断方向：跑步/竞速类项目值越低分数越高
-    LOWER_IS_BETTER_KEYWORDS = ['50米', '折返跑', '跑']
-    higher_is_better = not any(kw in item_name for kw in LOWER_IS_BETTER_KEYWORDS)
+    higher_is_better = not is_running
+    
+    # 跑步类项目值为0表示未测试，直接返回0分
+    if not higher_is_better and value <= 0:
+        return 0
     
     # Find the matching score
     if higher_is_better:

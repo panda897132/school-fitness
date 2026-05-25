@@ -3,9 +3,13 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# 敏感数据文件（含学生个人信息和密码哈希）
+data/students.json
+data/app_config.json
+*.bak
+
 # 数据库
 *.db
-*.db.bak
 
 # 日志
 logs/
@@ -17,6 +21,11 @@ logs/
 # IDE
 .vscode/
 .idea/
+
+# 打包产物
+build/
+dist/
+*.spec
 
 # OS
 .DS_Store

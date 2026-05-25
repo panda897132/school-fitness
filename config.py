@@ -51,6 +51,23 @@ GRADE_LEVELS = {
 LOGIN_WINDOW_SIZE = (500, 350)
 MAIN_WINDOW_SIZE = (1200, 750)
 
+# 主题颜色
+COLOR_PRIMARY = '#1976d2'
+COLOR_PRIMARY_DARK = '#1565c0'
+COLOR_ACCENT = '#1a73e8'
+COLOR_SUCCESS = '#4CAF50'
+COLOR_DANGER = '#F44336'
+COLOR_WARNING = '#FF9800'
+COLOR_NEUTRAL = '#9E9E9E'
+COLOR_BG_LIGHT = '#f5f5f5'
+COLOR_BG_WHITE = 'white'
+COLOR_BG_HEADER = '#e3f2fd'
+COLOR_TEXT_LIGHT = '#999'
+COLOR_TEXT_MUTED = '#666'
+
+# 字体预设 — 在 TK_FONT 定义之后
+# (见下方 TK_FONT 后的字体常量)
+
 # 数据目录
 DATA_DIR = "data"
 STUDENTS_FILE = "data/students.json"
@@ -84,6 +101,17 @@ STUDENT_COLUMNS = [
 
 # Tkinter 字体（优先使用系统可用中文字体，避免硬编码 Windows 字体）
 TK_FONT = 'Noto Sans CJK JP'
+
+# 字体预设（依赖 TK_FONT）
+FONT_BOLD_14 = (TK_FONT, 14, 'bold')
+FONT_BOLD_13 = (TK_FONT, 13, 'bold')
+FONT_BOLD_12 = (TK_FONT, 12, 'bold')
+FONT_BOLD_11 = (TK_FONT, 11, 'bold')
+FONT_BOLD_10 = (TK_FONT, 10, 'bold')
+FONT_NORMAL_11 = (TK_FONT, 11)
+FONT_NORMAL_10 = (TK_FONT, 10)
+FONT_NORMAL_9 = (TK_FONT, 9)
+FONT_SMALL_8 = (TK_FONT, 8)
 
 # matplotlib 中文字体候选
 FONT_CANDIDATES = [

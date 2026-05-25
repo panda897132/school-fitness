@@ -57,13 +57,6 @@ class LoginWindow:
         inner = tk.Frame(form_frame, bg='white')
         inner.pack(expand=True)
         
-        # 图标/标题
-        tk.Label(
-            inner, text='🔐 系统登录', 
-            font=(TK_FONT, 14, 'bold'),
-            fg='#333', bg='white'
-        ).pack(pady=(0, 20))
-        
         # 用户名
         tk.Label(
             inner, text='用户名:', 

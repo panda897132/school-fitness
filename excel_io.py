@@ -2,9 +2,13 @@
 
 import os
 import re
+import datetime
+import logging
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from config import CN_TO_NUM, GRADE_ITEMS
+
+logger = logging.getLogger(__name__)
 
 
 def _find_column_index(ws, row_num, name_parts):
@@ -20,6 +24,38 @@ def _find_column_index(ws, row_num, name_parts):
         if all(part in cell_val for part in name_parts):
             return col
     return None
+
+
+def _normalize_header(hdr):
+    """规范化表头：全角数字/符号转半角，去除不可见字符"""
+    if not hdr:
+        return hdr
+    result = []
+    for ch in hdr:
+        code = ord(ch)
+        if 0xFF10 <= code <= 0xFF19:
+            result.append(chr(code - 0xFF10 + ord('0')))
+        elif 0xFF21 <= code <= 0xFF3A:
+            result.append(chr(code - 0xFF21 + ord('A')))
+        elif 0xFF41 <= code <= 0xFF5A:
+            result.append(chr(code - 0xFF41 + ord('a')))
+        elif code == 0xFF0A:
+            result.append('*')
+        elif code == 0xFF0D:
+            result.append('-')
+        elif code == 0xFF08:
+            result.append('(')
+        elif code == 0xFF09:
+            result.append(')')
+        elif code == 0xFF1A:
+            result.append(':')
+        elif code == 0xFF0F:
+            result.append('/')
+        elif code == 0x3000:
+            result.append(' ')
+        else:
+            result.append(ch)
+    return ''.join(result)
 
 
 def _is_valid_value(val):
@@ -60,6 +96,166 @@ def _parse_run_time(raw):
         return float(raw_str)
     except (ValueError, TypeError):
         return 0
+
+
+def _parse_number(raw):
+    """通用数值解析：兼容 float/int/str/datetime.time 等 Excel 单元格类型"""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, datetime.time):
+        return raw.hour * 3600.0 + raw.minute * 60.0 + raw.second + raw.microsecond / 1000000.0
+    if isinstance(raw, datetime.datetime):
+        return raw.hour * 3600.0 + raw.minute * 60.0 + raw.second + raw.microsecond / 1000000.0
+    raw_str = str(raw).strip()
+    if raw_str == '':
+        return None
+    try:
+        return float(raw_str)
+    except (ValueError, TypeError):
+        pass
+    m = re.match(r'^(\d+):(\d+(?:\.\d+)?)$', raw_str)
+    if m:
+        return float(m.group(1)) * 60 + float(m.group(2))
+    m = re.match(r"(\d+)'(\d+(?:\.\d+)?)$", raw_str)
+    if m:
+        return float(m.group(1)) * 60 + float(m.group(2))
+    return None
+
+
+def parse_filename_for_import(filename):
+    """从文件名智能提取年级和班级编号
+    
+    支持格式:
+      '6.1学生体质健康测试.xlsx' → {'grade': 6, 'class_id': '601', 'class_name': '六(01)班'}
+      '501班.xlsx' → {'grade': 5, 'class_id': '501', 'class_name': '五(01)班'}
+      '五年级(01)班.xlsx' → {'grade': 5, 'class_id': '501', 'class_name': '五(01)班'}
+      '1.xlsx' → {'grade': 1, 'class_id': None, 'class_name': None}
+    """
+    from config import CN_TO_NUM, NUM_TO_CN
+    
+    name = os.path.splitext(os.path.basename(filename))[0]
+    result = {'grade': None, 'class_id': None, 'class_name': None}
+    
+    # 规则1: "{grade}.{class_num}" 开头
+    m = re.match(r'^(\d)\.(\d{1,2})', name)
+    if m:
+        g, c = int(m.group(1)), int(m.group(2))
+        if 1 <= g <= 6:
+            cn = NUM_TO_CN.get(g, str(g))
+            result['grade'] = g
+            result['class_id'] = f'{g}{c:02d}'
+            result['class_name'] = f'{cn}({c:02d})班'
+            return result
+    
+    # 规则2: 3位班级编号开头
+    m = re.match(r'^(\d{3})', name)
+    if m:
+        cid = m.group(1)
+        g = int(cid[0])
+        if 1 <= g <= 6:
+            cn = NUM_TO_CN.get(g, str(g))
+            result['grade'] = g
+            result['class_id'] = cid
+            result['class_name'] = f'{cn}({cid[-2:]})班'
+            return result
+    
+    # 规则3: 中文 "N年级(M)班"
+    m = re.match(r'(.)年级\(?(\d+)\)?班', name)
+    if m:
+        g = CN_TO_NUM.get(m.group(1), 1)
+        if 1 <= g <= 6:
+            c = int(m.group(2))
+            result['grade'] = g
+            result['class_id'] = f'{g}{c:02d}'
+            result['class_name'] = f'{m.group(1)}({c:02d})班'
+            return result
+    
+    # 规则4: 单个数字开头（仅年级）
+    m = re.match(r'^(\d)', name)
+    if m:
+        g = int(m.group(1))
+        if 1 <= g <= 6:
+            result['grade'] = g
+            return result
+    
+    return result
+
+
+def quick_scan_excel(filepath):
+    """快速扫描Excel文件：检测格式、统计班级数和行数
+    
+    Returns:
+        {'format': 'old'|'new'|'unknown',
+         'sheets': [...],
+         'total_rows': N,
+         'classes': {'101': {'grade': 1, 'rows': 40}, ...}}
+    """
+    try:
+        wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+    except Exception:
+        return {'format': 'unknown', 'sheets': [], 'total_rows': 0, 'classes': {}}
+    
+    grade_names = {'一年级': 1, '二年级': 2, '三年级': 3, '四年级': 4, '五年级': 5, '六年级': 6}
+    has_grade_sheets = any(sn in grade_names for sn in wb.sheetnames)
+    
+    result = {
+        'format': 'old' if has_grade_sheets else 'new',
+        'sheets': list(wb.sheetnames),
+        'total_rows': 0,
+        'classes': {}
+    }
+    
+    if has_grade_sheets:
+        # 旧格式: 扫描每个年级Sheet的A列获取班级编号
+        for sn in wb.sheetnames:
+            if sn in grade_names:
+                ws = wb[sn]
+                grade = grade_names[sn]
+                class_ids = set()
+                row_count = 0
+                for row in ws.iter_rows(min_row=2, max_col=1, values_only=True):
+                    v = row[0]
+                    if v is not None and str(v).strip():
+                        cid = str(int(float(str(v)))) if '.' in str(v) else str(v).strip()
+                        if len(cid) == 2:
+                            cid = f'{grade}{cid}'
+                        class_ids.add(cid)
+                        row_count += 1
+                for cid in sorted(class_ids):
+                    result['classes'][cid] = {'grade': grade, 'rows': row_count}
+                result['total_rows'] += row_count
+    else:
+        # 新格式: 尝试检测表头
+        for sn in wb.sheetnames:
+            if '年级' in sn:
+                continue
+            ws = wb[sn]
+            # 找表头行
+            header_row = None
+            for r in range(1, min(ws.max_row + 1, 5)):
+                for c in range(1, min(ws.max_column + 1, 30)):
+                    val = str(ws.cell(row=r, column=c).value or '')
+                    if '姓名' in val:
+                        header_row = r
+                        break
+                if header_row:
+                    break
+            
+            if header_row:
+                row_count = 0
+                for row in ws.iter_rows(min_row=header_row + 1, max_col=1, values_only=True):
+                    v = row[0]
+                    if v is not None and str(v).strip() and '占比' not in str(v):
+                        row_count += 1
+                result['total_rows'] += row_count
+                # 新格式默认一个班级
+                if row_count > 0:
+                    result['classes']['_new_'] = {'grade': 0, 'rows': row_count}
+    
+    wb.close()
+    return result
 
 
 def import_from_excel(filepath, grade_hint=None, class_prefix=None):
@@ -122,7 +318,7 @@ def _detect_new_format_header(ws):
         has_name = False
         has_total_score = False
         for col in range(1, ws.max_column + 1):
-            val = str(ws.cell(row=row, column=col).value or '').strip()
+            val = _normalize_header(str(ws.cell(row=row, column=col).value or '').strip())
             if '姓名' in val:
                 has_name = True
             if '总成绩' in val:
@@ -145,8 +341,10 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
     detected_items = set()
     
     for col in range(1, ws.max_column + 1):
-        hdr = str(ws.cell(row=header_row, column=col).value or '').strip()
-        if hdr == '成绩' or hdr == '总成绩' or hdr == 'BMI':
+        hdr = _normalize_header(str(ws.cell(row=header_row, column=col).value or '').strip())
+        if hdr == 'BMI':
+            continue
+        if '成绩' in hdr or '得分' in hdr or '分数' in hdr or hdr == '总成绩':
             continue
         if '姓名' in hdr:
             col_map['name'] = col
@@ -159,11 +357,11 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
         elif '肺活量' in hdr:
             col_map['肺活量'] = col
             detected_items.add('肺活量')
-        elif ('50米' in hdr and '50×8' not in hdr and '50*8' not in hdr
-              and '50x8' not in hdr and '50X8' not in hdr and '往返' not in hdr):
+        elif ((('50米' in hdr or '50m' in hdr.lower() or '50M' in hdr) and '×8' not in hdr and '*8' not in hdr and '50×8' not in hdr and '50*8' not in hdr
+              and '50x8' not in hdr and '50X8' not in hdr and '往返' not in hdr and '折返' not in hdr)):
             col_map['50米跑'] = col
             detected_items.add('50米跑')
-        elif '50×8' in hdr or '50*8' in hdr or '50x8' in hdr or '50X8' in hdr or '往返跑' in hdr:
+        elif '50×8' in hdr or '50*8' in hdr or '50x8' in hdr or '50X8' in hdr or '往返跑' in hdr or '×8' in hdr or '*8' in hdr:
             col_map['50*8折返跑'] = col
             detected_items.add('50*8折返跑')
         elif '坐位' in hdr:
@@ -223,20 +421,14 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
         if 'height' in col_map:
             hv = ws.cell(row=row, column=col_map['height']).value
             if _is_valid_value(hv):
-                try:
-                    height = float(hv)
-                except (ValueError, TypeError):
-                    height = None
+                height = _parse_number(hv)
         
         # 体重
         weight = None
         if 'weight' in col_map:
             wv = ws.cell(row=row, column=col_map['weight']).value
             if _is_valid_value(wv):
-                try:
-                    weight = float(wv)
-                except (ValueError, TypeError):
-                    weight = None
+                weight = _parse_number(wv)
         
         # 测试项目值
         tests = {}
@@ -245,14 +437,11 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
             if col_idx:
                 raw = ws.cell(row=row, column=col_idx).value
                 if _is_valid_value(raw):
-                    if item_name == '50*8折返跑':
-                        tests[item_name] = _parse_run_time(raw)
+                    parsed = _parse_number(raw)
+                    if parsed is not None:
+                        tests[item_name] = parsed
                     else:
-                        try:
-                            tests[item_name] = float(raw)
-                        except (ValueError, TypeError):
-                            raw_str = str(raw).strip()
-                            tests[item_name] = _parse_run_time(raw_str)
+                        tests[item_name] = None
                 else:
                     tests[item_name] = None
             else:
@@ -309,7 +498,7 @@ def _import_old_format(wb, grade_sheet_names):
         header_row = None
         for row in range(1, min(ws.max_row + 1, 10)):
             for col in range(1, ws.max_column + 1):
-                val = str(ws.cell(row=row, column=col).value or '')
+                val = _normalize_header(str(ws.cell(row=row, column=col).value or ''))
                 if '姓名' in val and ('学号' in val or _find_column_index(ws, row, ['学号'])):
                     header_row = row
                     break
@@ -317,12 +506,11 @@ def _import_old_format(wb, grade_sheet_names):
                 break
         
         if header_row is None:
-            # 尝试更宽松的匹配
             for row in range(1, min(ws.max_row + 1, 10)):
                 has_name = False
                 has_number = False
                 for col in range(1, ws.max_column + 1):
-                    val = str(ws.cell(row=row, column=col).value or '')
+                    val = _normalize_header(str(ws.cell(row=row, column=col).value or ''))
                     if '姓名' in val:
                         has_name = True
                     if '学号' in val or '班级' in val:
@@ -337,7 +525,7 @@ def _import_old_format(wb, grade_sheet_names):
         # 建立列索引映射
         col_map = {}
         for col in range(1, ws.max_column + 1):
-            hdr = str(ws.cell(row=header_row, column=col).value or '').strip()
+            hdr = _normalize_header(str(ws.cell(row=header_row, column=col).value or '').strip())
             if '班级' in hdr:
                 col_map['class_id'] = col
             elif '学号' in hdr:
@@ -419,20 +607,14 @@ def _import_old_format(wb, grade_sheet_names):
                 if 'height' in col_map:
                     hv = ws.cell(row=row, column=col_map['height']).value
                     if _is_valid_value(hv):
-                        try:
-                            height = float(hv)
-                        except (ValueError, TypeError):
-                            height = None
+                        height = _parse_number(hv)
                 
                 # 体重
                 weight = None
                 if 'weight' in col_map:
                     wv = ws.cell(row=row, column=col_map['weight']).value
                     if _is_valid_value(wv):
-                        try:
-                            weight = float(wv)
-                        except (ValueError, TypeError):
-                            weight = None
+                        weight = _parse_number(wv)
                 
                 # 测试项目值
                 tests = {}
@@ -441,15 +623,11 @@ def _import_old_format(wb, grade_sheet_names):
                     if col_idx:
                         raw = ws.cell(row=row, column=col_idx).value
                         if _is_valid_value(raw):
-                            if item_name == '50*8折返跑':
-                                tests[item_name] = _parse_run_time(raw)
+                            parsed = _parse_number(raw)
+                            if parsed is not None:
+                                tests[item_name] = parsed
                             else:
-                                try:
-                                    tests[item_name] = float(raw)
-                                except (ValueError, TypeError):
-                                    # 可能是时间格式如 1'36
-                                    raw_str = str(raw).strip()
-                                    tests[item_name] = _parse_run_time(raw_str)
+                                tests[item_name] = None
                         else:
                             tests[item_name] = None
                     else:
@@ -504,7 +682,7 @@ def _to_time_str(seconds):
 
 
 def export_statistics_report(dm, output_path, scope='全校', grade=None, class_id=None):
-    """导出统计分析报告
+    """导出统计分析报告（三层分析版）
     
     Args:
         dm: DataManager 实例
@@ -514,54 +692,172 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
         class_id: 班级编号 (scope='班级'时)
     """
     try:
+        from analysis import analyze_class, analyze_grade, analyze_school
+        from config import GRADE_ITEMS
+        
         wb = openpyxl.Workbook()
         
-        # 标题样式
+        # 样式
         title_font = Font(name='微软雅黑', size=14, bold=True)
+        subtitle_font = Font(name='微软雅黑', size=11, bold=True)
         header_font = Font(name='微软雅黑', size=10, bold=True)
         header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
         header_font_white = Font(name='微软雅黑', size=10, bold=True, color='FFFFFF')
-        border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
+        green_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+        border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin'))
         center_align = Alignment(horizontal='center', vertical='center')
         
-        # --- 学生明细表 ---
-        ws_detail = wb.active
-        ws_detail.title = '学生明细'
+        def _style_header(ws, row, cols, values):
+            for ci, v in enumerate(values, 1):
+                cell = ws.cell(row=row, column=ci, value=v)
+                cell.font = header_font_white
+                cell.fill = header_fill
+                cell.alignment = center_align
+                cell.border = border
         
-        # 获取数据
+        def _style_row(ws, row, cols, values, bold_first=False):
+            for ci, v in enumerate(values, 1):
+                cell = ws.cell(row=row, column=ci, value=v if v is not None else '')
+                cell.border = border
+                cell.alignment = center_align
+                if bold_first and ci == 1:
+                    cell.font = header_font
+        
+        # ========== Sheet 1: 综合分析 ==========
+        ws_analysis = wb.active
+        ws_analysis.title = '综合分析'
+        
+        title_map = {'全校': '全校', '年级': f'{grade}年级', '班级': f'{class_id}班' if class_id else ''}
+        
+        # 根据 scope 获取分析数据
+        analysis_data = None
+        if scope == '班级' and class_id:
+            analysis_data = analyze_class(dm, class_id)
+        elif scope == '年级' and grade:
+            analysis_data = analyze_grade(dm, grade)
+        else:
+            analysis_data = analyze_school(dm)
+        
+        if analysis_data and analysis_data.get('total', 0) > 0:
+            r = 1
+            ws_analysis.merge_cells(start_row=r, start_column=1, end_row=r, end_column=10)
+            ws_analysis.cell(row=r, column=1, value=f'诸葛镇中心小学 — 体质健康分析报告 ({title_map[scope]})').font = title_font
+            r += 2
+            
+            # 基本信息
+            ws_analysis.cell(row=r, column=1, value='基本信息').font = subtitle_font
+            r += 1
+            _style_header(ws_analysis, r, 10, ['指标', '数值'])
+            r += 1
+            info_rows = [
+                ('总人数', str(analysis_data['total'])),
+                ('男生', str(analysis_data.get('male_count', '?'))),
+                ('女生', str(analysis_data.get('female_count', '?'))),
+                ('有效数据', f"{analysis_data['valid_count']} 人"),
+                ('数据不全', f"{analysis_data.get('invalid_count', 0)} 人"),
+                ('有效数据占比', f"{analysis_data.get('validity_rate', 0)}%"),
+            ]
+            for label, val in info_rows:
+                _style_row(ws_analysis, r, 2, [label, val], bold_first=True)
+                r += 1
+            
+            r += 1
+            
+            # 总分等级
+            tg = analysis_data.get('total_grade', {})
+            if tg and tg.get('effective_total', 0) > 0:
+                ws_analysis.cell(row=r, column=1, value='总分等级分布').font = subtitle_font
+                r += 1
+                _style_header(ws_analysis, r, 10, ['等级', '人数', '占比'])
+                r += 1
+                for grade_label in ['优秀', '良好', '及格', '不及格']:
+                    count = tg['distribution'].get(grade_label, 0)
+                    pct = f"{round(count / tg['effective_total'] * 100, 1)}%" if tg['effective_total'] > 0 else '0%'
+                    _style_row(ws_analysis, r, 3, [grade_label, str(count), pct])
+                    r += 1
+                _style_row(ws_analysis, r, 3, ['🏆 优良率', '',
+                    f"{tg.get('excellence_rate', 0)}%"], bold_first=True)
+                r += 2
+            
+            # 各项目分析
+            items = analysis_data.get('items', [])
+            if items:
+                ws_analysis.cell(row=r, column=1, value='各项目分析').font = subtitle_font
+                r += 1
+                is_bmi_sheet = all(it['item_name'] == 'BMI' for it in items[:1])
+                if is_bmi_sheet or items[0]['item_name'] == 'BMI':
+                    # BMI 用四档
+                    _style_header(ws_analysis, r, 10,
+                        ['项目', '正常', '超重', '低体重', '肥胖', '有效总数', '肥胖率'])
+                else:
+                    _style_header(ws_analysis, r, 10,
+                        ['项目', '优秀', '良好', '及格', '不及格', '有效总数', '优良率'])
+                r += 1
+                
+                for item in items:
+                    dist = item['distribution']
+                    eff = item['effective_total']
+                    
+                    if item['item_name'] == 'BMI':
+                        row_vals = [
+                            item['item_name'],
+                            str(dist.get('正常', 0)),
+                            str(dist.get('超重', 0)),
+                            str(dist.get('低体重', 0)),
+                            str(dist.get('肥胖', 0)),
+                            str(eff),
+                            f"{item.get('obesity_rate', 0)}%"
+                        ]
+                    else:
+                        row_vals = [
+                            item['item_name'],
+                            str(dist.get('优秀', 0)),
+                            str(dist.get('良好', 0)),
+                            str(dist.get('及格', 0)),
+                            str(dist.get('不及格', 0)),
+                            str(eff),
+                            f"{item.get('excellence_rate', 0)}%"
+                        ]
+                    _style_row(ws_analysis, r, 7, row_vals, bold_first=True)
+                    r += 1
+            
+            # 班级排名 (仅年级/全校)
+            rankings = analysis_data.get('class_rankings', [])
+            if rankings:
+                r += 1
+                ws_analysis.cell(row=r, column=1, value='班级排名（按优良率）').font = subtitle_font
+                r += 1
+                _style_header(ws_analysis, r, 10, ['排名', '班级', '人数', '优良率', '平均分', '肥胖率'])
+                r += 1
+                for i, cr in enumerate(rankings):
+                    _style_row(ws_analysis, r, 6, [
+                        str(i + 1), cr['class_name'], str(cr['total']),
+                        f"{cr['excellence_rate']}%", str(cr['avg_score']),
+                        f"{cr['obesity_rate']}%"
+                    ])
+                    r += 1
+            
+            # 调整列宽
+            for ci in range(1, 11):
+                ws_analysis.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 14
+        
+        # ========== Sheet 2: 学生明细 ==========
+        ws_detail = wb.create_sheet('学生明细')
         stats = dm.get_statistics(grade=grade, class_id=class_id)
         
-        # 标题
-        title_map = {
-            '全校': '全校',
-            '年级': f'{grade}年级',
-            '班级': f'{class_id}班' if class_id else ''
-        }
         ws_detail.merge_cells('A1:R1')
         ws_detail.cell(row=1, column=1, value=f'诸葛镇中心小学 — 学生体质健康数据 ({title_map[scope]})').font = title_font
         ws_detail.cell(row=1, column=1).alignment = center_align
         
-        # 表头 (与模板一致)
         headers = [
             '班级编号', '学号', '姓名', '学籍号', '性别',
             '身高(cm)', '体重(kg)', 'BMI', 'BMI等级', 'BMI得分',
             '肺活量', '50米跑', '坐位体前屈', '一分钟跳绳', '仰卧起坐',
             '50*8折返跑', '总分', '等级'
         ]
+        _style_header(ws_detail, 2, len(headers), headers)
         
-        for ci, h in enumerate(headers, 1):
-            cell = ws_detail.cell(row=2, column=ci, value=h)
-            cell.font = header_font_white
-            cell.fill = header_fill
-            cell.alignment = center_align
-            cell.border = border
-        
-        # 数据行
         row = 3
         for s in stats['students']:
             data_row = [
@@ -590,35 +886,70 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                 cell.alignment = center_align
             row += 1
         
-        # 调整列宽
         for ci in range(1, len(headers) + 1):
             ws_detail.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 12
         
-        # --- 统计汇总表 ---
-        ws_summary = wb.create_sheet('统计汇总')
-        
-        ws_summary.merge_cells('A1:D1')
-        ws_summary.cell(row=1, column=1, value=f'诸葛镇中心小学 — 统计分析 ({title_map[scope]})').font = title_font
-        
-        summary_data = [
-            ('总人数', stats['total']),
-            ('平均分', stats['avg_score']),
-            ('', ''),
-            ('等级', '人数', '占比', ''),
-            ('优秀', stats['优秀'], f"{stats['优秀率']}%", f"(90-100分)"),
-            ('良好', stats['良好'], f"{stats['良好率']}%", f"(80-89分)"),
-            ('及格', stats['及格'], f"{stats['及格率']}%", f"(60-79分)"),
-            ('不及格', stats['不及格'], f"{stats['不及格率']}%", f"(<60分)"),
-        ]
-        
-        for ri, (label, *vals) in enumerate(summary_data, 2):
-            ws_summary.cell(row=ri, column=1, value=label).font = header_font
-            for vi, v in enumerate(vals, 2):
-                ws_summary.cell(row=ri, column=vi, value=v)
+        # ========== Sheet 3: 班级分析 (全校/年级导出时) ==========
+        if scope in ('全校', '年级') and analysis_data:
+            class_analyses = analysis_data.get('class_analyses', [])
+            if class_analyses:
+                ws_class = wb.create_sheet('班级分析')
+                ws_class.merge_cells('A1:J1')
+                ws_class.cell(row=1, column=1, value=f'班级分析汇总 ({title_map[scope]})').font = title_font
+                
+                all_grade_items = set()
+                for ca in class_analyses:
+                    for item in ca.get('items', []):
+                        all_grade_items.add(item['item_name'])
+                
+                headers_cls = ['班级', '人数', '男', '女', '有效', '优良率']
+                for item_name in sorted(all_grade_items):
+                    if item_name != 'BMI':
+                        headers_cls.append(f'{item_name}优良率')
+                headers_cls += ['BMI正常', 'BMI超重', 'BMI低体重', 'BMI肥胖', '肥胖率']
+                
+                _style_header(ws_class, 2, len(headers_cls), headers_cls)
+                
+                row = 3
+                for ca in class_analyses:
+                    vals = [
+                        ca['class_name'], str(ca['total']),
+                        str(ca.get('male_count', 0)), str(ca.get('female_count', 0)),
+                        str(ca['valid_count']),
+                        f"{ca['total_grade'].get('excellence_rate', 0)}%"
+                    ]
+                    
+                    for item_name in sorted(all_grade_items):
+                        if item_name != 'BMI':
+                            found = False
+                            for item in ca.get('items', []):
+                                if item['item_name'] == item_name:
+                                    vals.append(f"{item.get('excellence_rate', 0)}%")
+                                    found = True
+                                    break
+                            if not found:
+                                vals.append('-')
+                    
+                    # BMI 数据
+                    bmi_item = next((it for it in ca.get('items', []) if it['item_name'] == 'BMI'), None)
+                    if bmi_item:
+                        dist = bmi_item['distribution']
+                        vals += [str(dist.get('正常', 0)), str(dist.get('超重', 0)),
+                                str(dist.get('低体重', 0)), str(dist.get('肥胖', 0)),
+                                f"{bmi_item.get('obesity_rate', 0)}%"]
+                    else:
+                        vals += ['0', '0', '0', '0', '0%']
+                    
+                    _style_row(ws_class, row, len(headers_cls), vals)
+                    row += 1
+                
+                for ci in range(1, len(headers_cls) + 1):
+                    ws_class.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 13
         
         wb.save(output_path)
         wb.close()
         return True, f"报告已导出到: {output_path}"
     
     except Exception as e:
+        logger.exception("导出统计报告失败: %s", output_path)
         return False, f"导出失败: {str(e)}"

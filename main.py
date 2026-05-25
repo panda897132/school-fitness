@@ -3,7 +3,11 @@
 import sys
 import os
 import traceback
+import logging
 import tkinter.messagebox as msgbox
+
+# 错误日志路径（记录完整 traceback，不向用户展示）
+ERROR_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'error.log')
 
 # 确保在正确的目录运行
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,8 +30,9 @@ def main():
             try:
                 main_win = MainWindow(dm)
                 main_win.run()
-            except Exception as e:
-                msgbox.showerror('错误', f'启动主窗口失败:\n{traceback.format_exc()}')
+            except Exception:
+                logging.exception('启动主窗口失败', exc_info=True)
+                msgbox.showerror('错误', '程序启动失败，请查看错误日志。')
                 raise
         
         # 启动登录窗口
@@ -46,11 +51,12 @@ def main():
             print(msg, file=sys.stderr)
         sys.exit(1)
     
-    except Exception as e:
+    except Exception:
+        logging.exception('程序启动失败', exc_info=True)
         try:
-            msgbox.showerror('启动失败', f'程序启动失败:\n{traceback.format_exc()}')
+            msgbox.showerror('启动失败', '程序启动失败，请查看错误日志。')
         except Exception:
-            print(f'启动失败: {traceback.format_exc()}', file=sys.stderr)
+            print('启动失败: 无法显示错误对话框', file=sys.stderr)
         sys.exit(1)
 
 

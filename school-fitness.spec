@@ -30,7 +30,7 @@ from PyInstaller.utils.hooks import collect_data_files
 _WIN_API_SET_SHIM = []
 
 # 从 hooks/ 目录加载预编译的 shim DLL
-_shim_path = os.path.join(os.path.dirname(__file__), 'hooks', 'api-ms-win-core-path-l1-1-0.dll')
+_shim_path = os.path.join(os.getcwd(), 'hooks', 'api-ms-win-core-path-l1-1-0.dll')
 if os.path.exists(_shim_path):
     _WIN_API_SET_SHIM.append((_shim_path, '.'))
     print(f"   [WIN7] ✅ 已加载 api-ms-win-core-path-l1-1-0.dll shim ({os.path.getsize(_shim_path)} bytes)")

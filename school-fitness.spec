@@ -122,9 +122,9 @@ a = Analysis(
         'pytz',                # 时区支持
         'et_xmlfile',          # openpyxl 的 XML 引擎
     ],
-    hookspath=[os.path.join(os.path.dirname(__file__), 'hooks')],
+    hookspath=[os.path.join(os.getcwd(), 'hooks')],
     hooksconfig={},
-    runtime_hooks=[os.path.join(os.path.dirname(__file__), 'hooks', 'runtime-ucrt-compat.py')],
+    runtime_hooks=[os.path.join(os.getcwd(), 'hooks', 'runtime-ucrt-compat.py')],
     excludes=[
         'numpy.random._examples',
         'scipy', 'PyQt5', 'IPython', 'jupyter',

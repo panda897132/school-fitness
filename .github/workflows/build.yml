@@ -37,7 +37,9 @@ jobs:
           echo "构建号: $(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuild"
 
       - name: 🏗️ PyInstaller 打包
-        run: python -m PyInstaller --clean --noconfirm school-fitness.spec
+        run: |
+          $env:PYTHONIOENCODING='utf-8'
+          python -m PyInstaller --clean --noconfirm school-fitness.spec
         working-directory: ${{ github.workspace }}
 
       - name: 🔍 检查打包结果

@@ -70,9 +70,9 @@ a = Analysis(
         ('data/', 'data/'),
     ],
     hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl', 'numpy', 'utils'],
-    hookspath=[os.path.join(os.path.dirname(__file__), 'hooks')],
+    hookspath=[os.path.join(os.getcwd(), 'hooks')],
     hooksconfig={},
-    runtime_hooks=[os.path.join(os.path.dirname(__file__), 'hooks', 'runtime-ucrt-compat.py')],
+    runtime_hooks=[os.path.join(os.getcwd(), 'hooks', 'runtime-ucrt-compat.py')],
     excludes=[
         'numpy.random._examples',
         'scipy',

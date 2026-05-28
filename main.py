@@ -18,6 +18,16 @@ else:
 # 错误日志路径（记录完整 traceback，不向用户展示）
 ERROR_LOG = os.path.join(_app_dir, 'data', 'error.log')
 
+# 将根日志记录器连接到 ERROR_LOG，确保所有 logging.exception() 写入文件
+# （在 console=False EXE 中 stderr 被抑制，不连接则崩溃跟踪静默丢失）
+os.makedirs(os.path.dirname(ERROR_LOG), exist_ok=True)
+logging.basicConfig(
+    filename=ERROR_LOG,
+    level=logging.ERROR,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+
 # 确保在正确的目录运行
 BASE_DIR = _app_dir
 os.chdir(BASE_DIR)

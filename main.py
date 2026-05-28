@@ -15,8 +15,19 @@ if getattr(sys, 'frozen', False):
 else:
     _app_dir = os.path.dirname(os.path.abspath(__file__))
 
+# ─── 运行时数据根目录（处理 Program Files 等只读安装路径） ──────
+# 如果 EXE 所在目录不可写，运行时数据（students.json、app_config.json、
+# audit.log、error.log）回退到用户数据目录，避免 PermissionError 崩溃。
+if os.access(_app_dir, os.W_OK):
+    DATA_ROOT = _app_dir
+else:
+    DATA_ROOT = os.path.join(
+        os.environ.get('APPDATA', os.path.expanduser('~')),
+        'SchoolFitness',
+    )
+
 # 错误日志路径（记录完整 traceback，不向用户展示）
-ERROR_LOG = os.path.join(_app_dir, 'data', 'error.log')
+ERROR_LOG = os.path.join(DATA_ROOT, 'data', 'error.log')
 
 # 将根日志记录器连接到 ERROR_LOG，确保所有 logging.exception() 写入文件
 # （在 console=False EXE 中 stderr 被抑制，不连接则崩溃跟踪静默丢失）
@@ -28,7 +39,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-# 确保在正确的目录运行
+# 确保在正确的目录运行（Python 路径和 CWD 始终用 EXE 目录）
 BASE_DIR = _app_dir
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
@@ -41,8 +52,8 @@ def main():
         from main_window import MainWindow
         from data_manager import DataManager
         
-        # 初始化数据管理器
-        dm = DataManager(BASE_DIR)
+        # 初始化数据管理器（使用 DATA_ROOT 确保写入可写目录）
+        dm = DataManager(DATA_ROOT)
         
         def on_login_success():
             """登录成功后打开主窗口"""

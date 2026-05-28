@@ -28,6 +28,12 @@ def _get_audit_handler():
             _app_dir = _os.path.dirname(_os.path.abspath(_sys.executable))
         else:
             _app_dir = _os.path.dirname(_os.path.abspath(__file__))
+        # 不可写时回退到用户数据目录（如 Program Files 场景）
+        if not _os.access(_app_dir, _os.W_OK):
+            _app_dir = _os.path.join(
+                _os.environ.get('APPDATA', _os.path.expanduser('~')),
+                'SchoolFitness',
+            )
         log_dir = _os.path.join(_app_dir, 'data')
         _os.makedirs(log_dir, exist_ok=True)
         _audit_handler = logging.FileHandler(
@@ -97,6 +103,12 @@ class DataManager:
                 base_dir = os.path.dirname(os.path.abspath(sys.executable))
             else:
                 base_dir = os.path.dirname(os.path.abspath(__file__))
+            # 不可写时回退到用户数据目录（如 Program Files 场景）
+            if not os.access(base_dir, os.W_OK):
+                base_dir = os.path.join(
+                    os.environ.get('APPDATA', os.path.expanduser('~')),
+                    'SchoolFitness',
+                )
         self.data_dir = os.path.join(base_dir, DATA_DIR)
         self.students_path = os.path.join(base_dir, STUDENTS_FILE)
         self.config_path = os.path.join(base_dir, CONFIG_FILE)

@@ -6,11 +6,20 @@ import traceback
 import logging
 import tkinter.messagebox as msgbox
 
+# ─── 路径解析（PyInstaller 冻结模式 vs 源码模式） ─────────────────────
+# PyInstaller 冻结 EXE 中 __file__ 指向临时提取目录（_MEIxxxxx），
+# 该目录在 EXE 退出时会被删除。必须使用 sys.executable 获取 EXE 真实路径，
+# 否则导入的学生数据会在重启后丢失。
+if getattr(sys, 'frozen', False):
+    _app_dir = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+
 # 错误日志路径（记录完整 traceback，不向用户展示）
-ERROR_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'error.log')
+ERROR_LOG = os.path.join(_app_dir, 'data', 'error.log')
 
 # 确保在正确的目录运行
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = _app_dir
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
 

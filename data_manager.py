@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import hashlib
 import secrets
 import shutil
@@ -21,7 +22,13 @@ def _get_audit_handler():
     global _audit_handler
     if _audit_handler is None:
         import os as _os
-        log_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'data')
+        import sys as _sys
+        # PyInstaller 冻结 EXE 中 __file__ 指向临时目录，使用 sys.executable 替代
+        if getattr(_sys, 'frozen', False):
+            _app_dir = _os.path.dirname(_os.path.abspath(_sys.executable))
+        else:
+            _app_dir = _os.path.dirname(_os.path.abspath(__file__))
+        log_dir = _os.path.join(_app_dir, 'data')
         _os.makedirs(log_dir, exist_ok=True)
         _audit_handler = logging.FileHandler(
             _os.path.join(log_dir, 'audit.log'),
@@ -85,7 +92,11 @@ class DataManager:
     
     def __init__(self, base_dir=None):
         if base_dir is None:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
+            # PyInstaller 冻结 EXE 中 __file__ 指向临时目录，使用 sys.executable 替代
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(os.path.abspath(sys.executable))
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
         self.data_dir = os.path.join(base_dir, DATA_DIR)
         self.students_path = os.path.join(base_dir, STUDENTS_FILE)
         self.config_path = os.path.join(base_dir, CONFIG_FILE)

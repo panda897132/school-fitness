@@ -35,6 +35,7 @@ a = Analysis(
         ('icon.ico', '.'),
         ('icon.png', '.'),
         ('data/', 'data/'),
+        ('用户手册.md', '.'),
     ],
     hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl', 'numpy', 'utils'],
     hookspath=[os.path.join(os.getcwd(), 'hooks')],

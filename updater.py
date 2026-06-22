@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -26,11 +27,33 @@ def _parse_version(v):
     return (0, 0, 0)
 
 
+def _make_ssl_context():
+    """创建兼容 Windows 7 的 SSL 上下文（Win7 默认不启用 TLS 1.2）"""
+    ctx = ssl.create_default_context()
+    try:
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except AttributeError:
+        try:
+            ctx.options |= getattr(ssl, 'OP_NO_TLSv1_0', 0) | getattr(ssl, 'OP_NO_TLSv1_1', 0)
+        except Exception:
+            pass
+    return ctx
+
+
+def _urlopen(url, timeout=10):
+    """带 SSL 兼容的 urlopen（Windows 7 TLS 1.2 支持）"""
+    req = Request(url, headers={
+        "User-Agent": "school-fitness-updater/1.0",
+        "Accept": "application/vnd.github.v3+json",
+    })
+    ctx = _make_ssl_context()
+    return urlopen(req, timeout=timeout, context=ctx)
+
+
 def check_latest_version():
     """查询 GitHub 最新版本，返回 (tag_name, html_url, asset_name, asset_url, size) 或 None"""
-    req = Request(UPDATE_URL, headers={"User-Agent": "school-fitness-updater/1.0", "Accept": "application/vnd.github.v3+json"})
     try:
-        resp = urlopen(req, timeout=10)
+        resp = _urlopen(UPDATE_URL, timeout=10)
         data = json.loads(resp.read().decode())
     except HTTPError as e:
         if e.code == 404:
@@ -71,8 +94,7 @@ def download_update(url, progress_callback=None):
     tmp_path = tmp.name
     tmp.close()
 
-    req = Request(url, headers={"User-Agent": "school-fitness-updater/1.0"})
-    resp = urlopen(req, timeout=120)
+    resp = _urlopen(url, timeout=120)
     total = int(resp.headers.get("Content-Length", 0))
     downloaded = 0
     chunk_size = 8192

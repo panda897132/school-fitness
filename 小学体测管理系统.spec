@@ -32,6 +32,7 @@ a = Analysis(
     pathex=[],
     binaries=_WIN_API_SET_SHIM,
     datas=[
+        ('icon.ico', '.'),
         ('icon.png', '.'),
         ('data/', 'data/'),
     ],
@@ -73,7 +74,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
-    icon='icon.png',
+    icon='icon.ico',
     version='version_info.txt',
     manifest='app.manifest',
 )

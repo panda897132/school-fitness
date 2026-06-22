@@ -49,7 +49,6 @@ a = Analysis(
         'setuptools',
         'pkg_resources',
         'test',
-        'unittest',
     ],
     noarchive=False,
     optimize=0,

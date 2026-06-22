@@ -99,8 +99,9 @@ class LoginWindow:
         login_btn.pack(pady=(25, 10))
         
         # 版本信息
+        from config import APP_VERSION
         tk.Label(
-            inner, text='v1.0 — 基于《国家学生体质健康标准（2014修订版）》', 
+            inner, text=f'v{APP_VERSION} — 基于《国家学生体质健康标准（2014修订版）》', 
             font=(TK_FONT, 8),
             fg='#999', bg='white'
         ).pack(pady=(10, 0))

@@ -1,7 +1,7 @@
 """分析对话框 — 从 MainWindow 拆分出的独立模块"""
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 from config import (
     GRADE_NAMES, GRADE_ITEMS, TK_FONT, NUM_TO_CN,
@@ -257,6 +257,33 @@ def show_class_full_analysis(mw):
             title=f'{class_name}各项目等级分布')
         c.get_tk_widget().pack(fill='both', expand=True)
         c.draw()
+
+    # ---- 导出按钮 ----
+    btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
+    btn_frame.pack(fill='x', side='bottom', padx=8, pady=6)
+
+    def _export_class_data():
+        from excel_io import export_statistics_report
+        filepath = filedialog.asksaveasfilename(
+            title='导出班级分析报告',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')],
+            parent=dialog
+        )
+        if not filepath:
+            return
+        success, msg = export_statistics_report(mw.dm, filepath, scope='班级', class_id=mw.current_class)
+        if success:
+            messagebox.showinfo('导出成功', msg, parent=dialog)
+        else:
+            messagebox.showerror('导出失败', msg, parent=dialog)
+
+    tk.Button(btn_frame, text='📤 导出数据', command=_export_class_data,
+              bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 10, 'bold'),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
+    tk.Button(btn_frame, text='关闭', command=dialog.destroy,
+              bg=COLOR_NEUTRAL, fg='white', font=(TK_FONT, 10),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
 
 
 # ============================================================
@@ -830,6 +857,38 @@ def show_grade_analysis(mw, grade=None, show_selector=True):
                 _render(GRADE_NAMES.index(selected) + 1)
         grade_combo.bind('<<ComboboxSelected>>', _on_grade_change)
 
+    # ---- 导出按钮 ----
+    btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
+    btn_frame.pack(fill='x', side='bottom', padx=8, pady=6)
+
+    def _export_grade_data():
+        from excel_io import export_statistics_report
+        filepath = filedialog.asksaveasfilename(
+            title='导出年级分析报告',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')],
+            parent=dialog
+        )
+        if not filepath:
+            return
+        g = grade
+        if show_selector:
+            selected = grade_var.get()
+            if selected in GRADE_NAMES:
+                g = GRADE_NAMES.index(selected) + 1
+        success, msg = export_statistics_report(mw.dm, filepath, scope='年级', grade=g)
+        if success:
+            messagebox.showinfo('导出成功', msg, parent=dialog)
+        else:
+            messagebox.showerror('导出失败', msg, parent=dialog)
+
+    tk.Button(btn_frame, text='📤 导出数据', command=_export_grade_data,
+              bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 10, 'bold'),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
+    tk.Button(btn_frame, text='关闭', command=dialog.destroy,
+              bg=COLOR_NEUTRAL, fg='white', font=(TK_FONT, 10),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
+
 
 # ============================================================
 #  全校分析
@@ -1087,3 +1146,30 @@ def show_school_analysis(mw):
     _build_test_comparison_table(notebook, mw, title='全校各轮次测试对比')
     _build_bmi_by_grade_tab(notebook, mw)
     _build_item_grade_distribution_tab(notebook, mw)
+
+    # ---- 导出按钮 ----
+    btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
+    btn_frame.pack(fill='x', side='bottom', padx=8, pady=6)
+
+    def _export_school_data():
+        from excel_io import export_statistics_report
+        filepath = filedialog.asksaveasfilename(
+            title='导出全校分析报告',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')],
+            parent=dialog
+        )
+        if not filepath:
+            return
+        success, msg = export_statistics_report(mw.dm, filepath, scope='全校')
+        if success:
+            messagebox.showinfo('导出成功', msg, parent=dialog)
+        else:
+            messagebox.showerror('导出失败', msg, parent=dialog)
+
+    tk.Button(btn_frame, text='📤 导出数据', command=_export_school_data,
+              bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 10, 'bold'),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
+    tk.Button(btn_frame, text='关闭', command=dialog.destroy,
+              bg=COLOR_NEUTRAL, fg='white', font=(TK_FONT, 10),
+              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)

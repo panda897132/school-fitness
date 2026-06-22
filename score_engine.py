@@ -147,41 +147,39 @@ def calc_bmi_score(height, weight, gender, grade):
     
     gender_key = 'male_range' if gender == '男' else 'female_range'
     
-    # 查找匹配的BMI范围
+    # 查找匹配的BMI范围（单次遍历，同时记录"正常"范围的边界）
+    normal_lo = normal_hi = None
+    normal_lo_inc = normal_hi_inc = False
+    
     for entry in bmi_list:
         range_str = entry.get(gender_key)
         if range_str is None:
             continue
         lo, hi, lo_inc, hi_inc = _parse_bmi_range(range_str)
+        
         if _bmi_in_range(bmi, lo, hi, lo_inc, hi_inc):
             grade_rank = entry.get('grade_rank', '')
-            # 保护：bmi_score 为 None/0 时使用 entry.score 或合理默认值
             bmi_score = entry.get('bmi_score')
             if bmi_score is None or bmi_score == 0:
-                bmi_score = entry.get('score', 0) or 0  # fallback to score field
+                bmi_score = entry.get('score', 0) or 0
             return bmi, grade_rank, bmi_score
-    
-    # 如果没有匹配，检查极端情况
-    # 低体重 (低于正常范围下限)
-    # 肥胖 (高于正常范围上限)
-    for entry in bmi_list:
+        
+        # 记录"正常"范围边界用于溢出判断
         if entry.get('grade_rank') == '正常':
-            range_str = entry.get(gender_key)
-            if range_str:
-                lo, hi, lo_inc, hi_inc = _parse_bmi_range(range_str)
-                if lo is not None and bmi <= lo:
-                    # 低体重
-                    for e in bmi_list:
-                        if e.get('grade_rank') == '低体重':
-                            return bmi, '低体重', e.get('bmi_score', 80)
-                    return bmi, '低体重', 80
-                if hi is not None and bmi >= hi:
-                    # 肥胖
-                    for e in bmi_list:
-                        if e.get('grade_rank') == '肥胖':
-                            return bmi, '肥胖', e.get('bmi_score', 60)
-                    return bmi, '肥胖', 60
-            break
+            normal_lo, normal_hi = lo, hi
+            normal_lo_inc, normal_hi_inc = lo_inc, hi_inc
+    
+    # 没有精确匹配：检查是否超出"正常"范围（低体重/肥胖）
+    if normal_lo is not None and bmi <= normal_lo:
+        for e in bmi_list:
+            if e.get('grade_rank') == '低体重':
+                return bmi, '低体重', e.get('bmi_score', 80)
+        return bmi, '低体重', 80
+    if normal_hi is not None and bmi >= normal_hi:
+        for e in bmi_list:
+            if e.get('grade_rank') == '肥胖':
+                return bmi, '肥胖', e.get('bmi_score', 60)
+        return bmi, '肥胖', 60
     
     return bmi, '正常', 100
 
@@ -228,7 +226,9 @@ def calc_item_score(value, gender, grade, item_name):
     
     # 折返跑项目：自动检测分.秒格式并转为纯秒数
     # 如 1.43 → 1分43秒 → 103秒
-    if '折返跑' in item_name and isinstance(value, (int, float)) and 0.5 <= value < 10.0:
+    SHUTTLE_MIN_SECONDS = 0.5
+    SHUTTLE_MAX_SECONDS = 10.0
+    if '折返跑' in item_name and isinstance(value, (int, float)) and SHUTTLE_MIN_SECONDS <= value < SHUTTLE_MAX_SECONDS:
         minutes = int(value)
         seconds_part = round((value - minutes) * 100)
         if 0 <= seconds_part < 60:
@@ -337,7 +337,7 @@ def calc_total_score(student_data, grade):
     if not gender or height is None or weight is None:
         return {'item_scores': {}, 'total_score': 0, 'total_grade': '数据不完整'}
     
-    result = {'item_scores': {}}
+    result = {'item_scores': {}, 'jump_rope_bonus': 0}
     
     # Calculate BMI (use pre-computed if available from student_data)
     if 'bmi_score' in student_data and student_data['bmi_score'] is not None:
@@ -362,7 +362,15 @@ def calc_total_score(student_data, grade):
         result['item_scores'][item_name] = score
         
         weight = weights.get(item_name, 0)
-        total_weighted += score * weight / 100.0
+        
+        # 一分钟跳绳附加分：超过100分阈值后每多2个加1分，最高20分
+        if item_name == '一分钟跳绳':
+            bonus = calc_jump_rope_bonus(value, gender, grade)
+            result['jump_rope_bonus'] = bonus
+            effective_score = min(score, 100) + bonus  # 有效得分最高120
+            total_weighted += effective_score * weight / 100.0
+        else:
+            total_weighted += score * weight / 100.0
     
     # Add BMI weighted score
     bmi_weight = weights.get('BMI', 15)
@@ -384,6 +392,37 @@ def calc_total_score(student_data, grade):
     return result
 
 
+def get_jump_rope_100_threshold(gender, grade):
+    """获取一分钟跳绳100分对应的次数阈值"""
+    standards = _load_standards()
+    grade_key = str(grade)
+    if grade_key not in standards:
+        return None
+    scoring = standards[grade_key].get('scoring', {})
+    jr = scoring.get('一分钟跳绳', {})
+    gender_key = 'male' if gender == '男' else 'female'
+    return int(jr.get(gender_key, {}).get('100', 0))
+
+
+def calc_jump_rope_bonus(count, gender, grade):
+    """计算一分钟跳绳附加分
+
+    国家学生体质健康标准（2014修订版）：
+    一分钟跳绳为高优指标，学生成绩超过单项评分100分后，
+    每多跳2个加1分，最高加20分。
+
+    Returns:
+        bonus (0-20 整数)
+    """
+    if count is None or count <= 0:
+        return 0
+    threshold = get_jump_rope_100_threshold(gender, grade)
+    if threshold is None or count <= threshold:
+        return 0
+    bonus = int((count - threshold) // 2)
+    return min(bonus, 20)
+
+
 def apply_scores_to_student(student_data, grade):
     """一站式计算学生全部得分并原地回填到 student_data 字典"""
     h = student_data.get('height')
@@ -398,6 +437,7 @@ def apply_scores_to_student(student_data, grade):
     
     result = calc_total_score(student_data, grade)
     student_data['scores'] = result.get('item_scores', {})
+    student_data['jump_rope_bonus'] = result.get('jump_rope_bonus', 0)
     student_data['total_score'] = result.get('total_score', 0)
     student_data['total_grade'] = result.get('total_grade', '')
     return student_data

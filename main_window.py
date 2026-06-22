@@ -18,6 +18,9 @@ from config import (
 )
 from score_engine import apply_scores_to_student
 from excel_io import import_from_excel, export_statistics_report, parse_filename_for_import, quick_scan_excel
+from merge_projects import merge_all, import_merged_excel
+from updater import UpdateDialog
+from config import APP_VERSION, APP_REPO, CN_TO_NUM
 from charts import ChartBuilder
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -109,6 +112,8 @@ class MainWindow:
         help_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='帮助', menu=help_menu)
         help_menu.add_command(label='使用说明', command=self._show_help)
+        help_menu.add_command(label='检查更新...', command=self._check_update)
+        help_menu.add_separator()
         help_menu.add_command(label='关于', command=self._show_about)
         
         # 快捷键绑定
@@ -345,15 +350,17 @@ class MainWindow:
             self.grade_listbox.selection_clear(0, tk.END)
             self.grade_listbox.selection_set(idx)
             self._on_grade_select(None)
-        # 先关闭上次的菜单
         if hasattr(self, '_last_grade_menu') and self._last_grade_menu:
             self._last_grade_menu.unpost()
         grade_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         grade_name = GRADE_NAMES[idx] if idx < len(GRADE_NAMES) else '一年级'
+        grade_num = idx + 1
         grade_menu.add_command(label=f'在"{grade_name}"添加班级...', command=lambda: self._add_class(grade_name))
         grade_menu.add_separator()
-        grade_menu.add_command(label='年级分析', command=lambda g=idx+1: self._show_grade_analysis(g, False))
-        grade_menu.add_command(label='年级测试对比', command=lambda g=idx+1: self._show_grade_test_comparison(g, False))
+        grade_menu.add_command(label='年级分析', command=lambda g=grade_num: self._show_grade_analysis(g, False))
+        grade_menu.add_command(label='年级测试对比', command=lambda g=grade_num: self._show_grade_test_comparison(g, False))
+        grade_menu.add_separator()
+        grade_menu.add_command(label='导出年级数据', command=lambda g=grade_num: self._export_grade_data(g))
         grade_menu.post(event.x_root, event.y_root)
         self._last_grade_menu = grade_menu
     
@@ -368,9 +375,15 @@ class MainWindow:
             self._last_class_menu.unpost()
         class_menu = tk.Menu(self.window, tearoff=0, font=(TK_FONT, 10))
         if self.current_class:
+            # 获取右键点击的班级ID（而非当前选中的）
+            classes = self.dm.get_classes_by_grade(self.current_grade) if self.current_grade else {}
+            class_ids = sorted(classes.keys())
+            click_class_id = class_ids[idx] if idx < len(class_ids) else self.current_class
             class_menu.add_command(label='班级分析', command=self._show_class_full_analysis)
             class_menu.add_command(label='测试对比', command=self._show_test_comparison)
             class_menu.add_command(label='重新计算分数', command=self._recalc_class_scores)
+            class_menu.add_separator()
+            class_menu.add_command(label='导出班级数据', command=lambda cid=click_class_id: self._export_class_data(cid))
             class_menu.add_separator()
             class_menu.add_command(label='删除班级', command=self._delete_class)
         class_menu.post(event.x_root, event.y_root)
@@ -537,7 +550,7 @@ class MainWindow:
         self._search_after_id = self.window.after(300, self._filter_students)
     
     def _filter_students(self):
-        """全校搜索（使用预建缓存）"""
+        """全校搜索（使用 DataManager.search_students）"""
         if getattr(self, '_suppress_search', False):
             return
         keyword = self.search_var.get().strip()
@@ -552,45 +565,40 @@ class MainWindow:
             self._saved_class = self.current_class
             self._searching = True
         
-        # 首次搜索时预建全校缓存（只建一次）
-        if self._school_cache is None:
-            self._school_cache = []
-            for cid in sorted(self.dm.get_all_classes().keys()):
-                cdata = self.dm.get_class(cid)
-                cname = cdata.get('name', cid) if cdata else cid
-                for s in self.dm.get_students(cid):
-                    sc = dict(s)
-                    sc['_class_id'] = cid
-                    sc['_class_name'] = cname
-                    self._school_cache.append(sc)
-        
-        # 从缓存过滤
-        kw_lower = keyword.lower()
-        filtered = [s for s in self._school_cache
-                    if kw_lower in (s.get('name', '') or '').lower()
-                    or kw_lower in (s.get('student_number', '') or '').lower()]
+        raw_results = self.dm.search_students(keyword)
         
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._iid_to_sid.clear()
         
-        if not filtered:
+        if not raw_results:
             self.class_title_label.config(text=f'🔍 "{keyword}" — 无匹配')
             self.stats_label.config(text='')
             self.round_label.config(text='全校搜索')
             self._update_status(f'未找到 "{keyword}"')
             return
         
-        filtered.sort(key=lambda s: s.get('total_score', 0) or 0, reverse=True)
-        for idx, s in enumerate(filtered):
+        class_cache = {}
+        def _get_cname(cid):
+            if cid not in class_cache:
+                cdata = self.dm.get_class(cid)
+                class_cache[cid] = cdata.get('name', cid) if cdata else cid
+            return class_cache[cid]
+        
+        for s in raw_results:
+            apply_scores_to_student(s, int(str(s.get('_class_id', '1'))[0]))
+            s['_class_name'] = _get_cname(s['_class_id'])
+        
+        raw_results.sort(key=lambda s: s.get('total_score', 0) or 0, reverse=True)
+        for idx, s in enumerate(raw_results):
             ds = dict(s)
             ds['name'] = f"[{s['_class_name']}] {s['name']}"
             self._insert_student_row(ds, idx + 1)
         
-        self.class_title_label.config(text=f'🔍 "{keyword}" — {len(filtered)}人')
-        self.stats_label.config(text=f'来自 {len(set(s["_class_id"] for s in filtered))} 个班级')
+        self.class_title_label.config(text=f'🔍 "{keyword}" — {len(raw_results)}人')
+        self.stats_label.config(text=f'来自 {len(set(s["_class_id"] for s in raw_results))} 个班级')
         self.round_label.config(text='全校搜索')
-        self._update_status(f'找到 {len(filtered)} 人')
+        self._update_status(f'找到 {len(raw_results)} 人')
     
     def _insert_student_row(self, student, row_num=0):
         """插入学生行（列顺序对齐模板格式）"""
@@ -613,6 +621,7 @@ class MainWindow:
             scores.get('坐位体前屈', ''),
             tests.get('一分钟跳绳', ''),
             scores.get('一分钟跳绳', ''),
+            student.get('jump_rope_bonus', ''),
             tests.get('仰卧起坐', ''),
             scores.get('仰卧起坐', ''),
             self._format_run_time(tests.get('50*8折返跑')),
@@ -649,7 +658,7 @@ class MainWindow:
         self.tree.tag_configure('incomplete', background='#e0e0e0', foreground='#757575')
     
     def _format_run_time(self, val):
-        """格式化折返跑时间"""
+        """格式化折返跑时间（m.ss 小数格式，与导入/导出一致）"""
         if val is None or val == '':
             return ''
         try:
@@ -657,7 +666,7 @@ class MainWindow:
             if v >= 60:
                 m = int(v // 60)
                 s = int(v % 60)
-                return f"{m}'{s:02d}"
+                return f"{m}.{s:02d}"
             return str(v)
         except (ValueError, TypeError):
             return str(val)
@@ -795,8 +804,6 @@ class MainWindow:
         self._importing = False
     
     def _merge_projects(self):
-        from merge_projects import merge_all
-        from tkinter import filedialog, messagebox
         filepaths = filedialog.askopenfilenames(
             title='选择体测项目文件（可多选）',
             initialdir=os.path.expanduser('~/桌面/体测项目'),
@@ -813,7 +820,6 @@ class MainWindow:
         wb.save(out_path)
         
         # 直接导入
-        from merge_projects import import_merged_excel
         total, ok_rate, avg = import_merged_excel(out_path, self.dm)
         messagebox.showinfo('完成', 
             f'✅ 合成并导入完成！\n\n'
@@ -1105,6 +1111,36 @@ class MainWindow:
         else:
             messagebox.showerror('导出失败', msg)
     
+    def _export_class_data(self, class_id):
+        """右键菜单：导出指定班级数据"""
+        filepath = filedialog.asksaveasfilename(
+            title='导出班级数据',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')]
+        )
+        if not filepath:
+            return
+        success, msg = export_statistics_report(self.dm, filepath, scope='班级', class_id=class_id)
+        if success:
+            messagebox.showinfo('导出成功', msg)
+        else:
+            messagebox.showerror('导出失败', msg)
+    
+    def _export_grade_data(self, grade):
+        """右键菜单：导出指定年级数据"""
+        filepath = filedialog.asksaveasfilename(
+            title='导出年级数据',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')]
+        )
+        if not filepath:
+            return
+        success, msg = export_statistics_report(self.dm, filepath, scope='年级', grade=grade)
+        if success:
+            messagebox.showinfo('导出成功', msg)
+        else:
+            messagebox.showerror('导出失败', msg)
+    
     def _change_password(self):
         """修改密码"""
         dialog = tk.Toplevel(self.window)
@@ -1172,7 +1208,6 @@ class MainWindow:
     
     def _add_class(self, default_grade_name=None):
         """添加班级"""
-        from config import CN_TO_NUM
         
         # 防止重复打开对话框
         if self._add_class_dialog and self._add_class_dialog.winfo_exists():
@@ -1316,8 +1351,9 @@ class MainWindow:
         student_id = self._iid_to_sid.get(iid, iid)
 
         class_id = self.current_class
-        if getattr(self, '_searching', False) and self._school_cache:
-            for s in self._school_cache:
+        if getattr(self, '_searching', False):
+            results = self.dm.search_students('')
+            for s in results:
                 if s.get('id') == student_id:
                     class_id = s.get('_class_id', self.current_class)
                     break
@@ -1424,7 +1460,7 @@ class MainWindow:
         for item_name in items:
             label = item_name
             if item_name == '50*8折返跑':
-                label += '(秒) [60-180]'
+                label += '(分.秒) [60-180秒]'
             elif item_name == '50米跑':
                 label += '(秒) [7-20]'
             elif item_name == '肺活量':
@@ -1792,10 +1828,15 @@ class MainWindow:
             '5. 统计 → 查看各类统计图表'
         )
     
+    def _check_update(self):
+        from updater import UpdateDialog
+        UpdateDialog(self.window)
+
     def _show_about(self):
         messagebox.showinfo('关于',
             '诸葛镇中心小学 — 学生体质健康管理系统\n\n'
-            '版本: v1.0\n'
+            f'版本: v{APP_VERSION}\n'
+            f'仓库: {APP_REPO}\n'
             '标准: 《国家学生体质健康标准（2014修订版）》\n\n'
             '功能: 学生体测数据管理、自动评分、统计分析'
         )

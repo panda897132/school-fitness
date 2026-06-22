@@ -1,5 +1,8 @@
 """常量配置 — 诸葛镇中心小学学生体质健康管理系统"""
 
+APP_VERSION = "1.0.0"
+APP_REPO = "panda897132/school-fitness"
+
 SCHOOL_NAME = "诸葛镇中心小学"
 APP_TITLE = f"{SCHOOL_NAME} — 学生体质健康管理系统"
 DEFAULT_USERNAME = "admin"
@@ -47,6 +50,9 @@ GRADE_LEVELS = {
     "不及格": (0, 59),
 }
 
+# 跳绳附加分上限（国家学生体质健康标准）
+JUMP_ROPE_BONUS_MAX = 20
+
 # 窗口默认尺寸
 LOGIN_WINDOW_SIZE = (500, 350)
 MAIN_WINDOW_SIZE = (1200, 750)
@@ -91,6 +97,7 @@ STUDENT_COLUMNS = [
     ("坐位体前屈得分", 60),
     ("一分钟跳绳", 80),
     ("一分钟跳绳得分", 60),
+    ("跳绳附加分", 60),
     ("仰卧起坐", 70),
     ("仰卧起坐得分", 60),
     ("50*8折返跑", 80),

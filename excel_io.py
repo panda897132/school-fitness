@@ -6,7 +6,7 @@ import datetime
 import logging
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from config import CN_TO_NUM, GRADE_ITEMS
+from config import CN_TO_NUM, GRADE_ITEMS, NUM_TO_CN
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,6 @@ def parse_filename_for_import(filename):
       '五年级(01)班.xlsx' → {'grade': 5, 'class_id': '501', 'class_name': '五(01)班'}
       '1.xlsx' → {'grade': 1, 'class_id': None, 'class_name': None}
     """
-    from config import CN_TO_NUM, NUM_TO_CN
     
     name = os.path.splitext(os.path.basename(filename))[0]
     result = {'grade': None, 'class_id': None, 'class_name': None}
@@ -284,7 +283,7 @@ def import_from_excel(filepath, grade_hint=None, class_prefix=None):
         # 后续如有大文件需求，可优先将 _import_new_format 改为 iter_rows 方式。
         wb = openpyxl.load_workbook(filepath, data_only=True)
     except Exception as e:
-        return {"success": False, "message": f"无法打开文件: {e}", "data": None}
+        return {"success": False, "message": "无法打开文件，请检查文件格式或是否被其他程序占用", "data": None}
     
     grade_sheet_names = {
         '一年级': 1, '二年级': 2, '三年级': 3,
@@ -334,7 +333,6 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
     新格式列结构: 姓名|性别|身高|体重|BMI|成绩|肺活量|成绩|50米跑|成绩|...
     每个测试项目后面跟一个"成绩"列(评分)，我们跳过评分列。
     """
-    from config import GRADE_ITEMS, NUM_TO_CN
     
     # 建立列索引映射
     col_map = {}
@@ -673,12 +671,15 @@ def _import_old_format(wb, grade_sheet_names):
 
 
 def _to_time_str(seconds):
-    """将秒数转换为 1'36 格式"""
+    """将秒数转换为 m.ss 小数格式（与导入格式一致）
+
+    例: 103秒 → 1.43（1分43秒）
+    """
     if seconds is None or seconds == 0:
         return ''
     m = int(seconds // 60)
     s = int(seconds % 60)
-    return f"{m}'{s:02d}"
+    return f"{m}.{s:02d}"
 
 
 def export_statistics_report(dm, output_path, scope='全校', grade=None, class_id=None):
@@ -853,7 +854,7 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
         headers = [
             '班级编号', '学号', '姓名', '学籍号', '性别',
             '身高(cm)', '体重(kg)', 'BMI', 'BMI等级', 'BMI得分',
-            '肺活量', '50米跑', '坐位体前屈', '一分钟跳绳', '仰卧起坐',
+            '肺活量', '50米跑', '坐位体前屈', '一分钟跳绳', '跳绳附加分', '仰卧起坐',
             '50*8折返跑', '总分', '等级'
         ]
         _style_header(ws_detail, 2, len(headers), headers)
@@ -875,6 +876,7 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                 s.get('tests', {}).get('50米跑', ''),
                 s.get('tests', {}).get('坐位体前屈', ''),
                 s.get('tests', {}).get('一分钟跳绳', ''),
+                s.get('jump_rope_bonus', ''),
                 s.get('tests', {}).get('仰卧起坐', ''),
                 _to_time_str(s.get('tests', {}).get('50*8折返跑')),
                 s.get('total_score', ''),

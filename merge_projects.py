@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import openpyxl
 from copy import copy
+from score_engine import apply_scores_to_student
 
 COL_CLASS = 1
 COL_NO = 2
@@ -135,7 +136,6 @@ def merge_all(files):
 
 def import_merged_excel(filepath, dm):
     """读取合成Excel并导入到系统中（含自动算分）"""
-    from score_engine import apply_scores_to_student
 
     wb = openpyxl.load_workbook(filepath, data_only=True)
     GRADES = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级']

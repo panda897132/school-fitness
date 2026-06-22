@@ -1,5 +1,5 @@
-openpyxl>=3.0.0
-matplotlib>=3.2.0
-numpy>=1.20.0        # charts.py 雷达图直接使用 np.pi / 角度计算
-pillow>=8.0.0        # matplotlib savefig 保存 PNG 的透明依赖
-pyinstaller>=5.0     # Windows打包用
+openpyxl~=3.1.5
+matplotlib~=3.9.0
+numpy~=1.26.0
+pillow~=10.4.0
+pyinstaller~=6.10.0

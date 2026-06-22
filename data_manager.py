@@ -6,6 +6,7 @@ import sys
 import hashlib
 import secrets
 import shutil
+import threading
 import logging
 from datetime import datetime
 from config import DATA_DIR, STUDENTS_FILE, CONFIG_FILE, GRADE_ITEMS
@@ -21,26 +22,24 @@ def _get_audit_handler():
     """延迟初始化审计日志 handler（等 DATA_DIR 准备好）"""
     global _audit_handler
     if _audit_handler is None:
-        import os as _os
-        import sys as _sys
         # PyInstaller 冻结 EXE 中 __file__ 指向临时目录，使用 sys.executable 替代
-        if getattr(_sys, 'frozen', False):
-            _app_dir = _os.path.dirname(_os.path.abspath(_sys.executable))
+        if getattr(sys, 'frozen', False):
+            _app_dir = os.path.dirname(os.path.abspath(sys.executable))
         else:
-            _app_dir = _os.path.dirname(_os.path.abspath(__file__))
+            _app_dir = os.path.dirname(os.path.abspath(__file__))
         # 不可写时回退到用户数据目录（如 Program Files 场景）
-        if not _os.access(_app_dir, _os.W_OK):
-            _app_dir = _os.path.join(
-                _os.environ.get('APPDATA', _os.path.expanduser('~')),
+        if not os.access(_app_dir, os.W_OK):
+            _app_dir = os.path.join(
+                os.environ.get('APPDATA', os.path.expanduser('~')),
                 'SchoolFitness',
             )
-        log_dir = _os.path.join(_app_dir, 'data')
-        _os.makedirs(log_dir, exist_ok=True)
+        log_dir = os.path.join(_app_dir, 'data')
+        os.makedirs(log_dir, exist_ok=True)
         _audit_handler = logging.FileHandler(
-            _os.path.join(log_dir, 'audit.log'),
+            os.path.join(log_dir, 'audit.log'),
             encoding='utf-8'
         )
-        _os.chmod(_os.path.join(log_dir, 'audit.log'), 0o600)
+        os.chmod(os.path.join(log_dir, 'audit.log'), 0o600)
         _audit_handler.setFormatter(logging.Formatter(
             '%(asctime)s [%(levelname)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
@@ -55,30 +54,47 @@ def _audit(message):
     _audit_logger.info(message)
 
 
+PBKDF2_ITERATIONS = 600000
+
+
 def _hash_password(password, salt=None):
-    """带盐 PBKDF2-SHA256 密码哈希"""
+    """带盐 PBKDF2-SHA256 密码哈希（含迭代次数版本号）"""
     if salt is None:
         salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-    return f"{salt}${h.hex()}"
+    h = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), PBKDF2_ITERATIONS)
+    return f"{salt}${PBKDF2_ITERATIONS}${h.hex()}"
 
 
 def _verify_and_upgrade_password(stored_hash, password, upgrade_callback=None):
-    """验证密码，若检测到旧格式(SHA256无盐)则自动升级为 PBKDF2
-    
-    Args:
-        stored_hash: 存储的密码哈希
-        password: 用户输入的明文密码
-        upgrade_callback: 升级回调，接收新哈希，用于写回配置文件
-    
+    """验证密码，自动处理三种哈希格式并升级
+
+    支持格式:
+      v2: salt${iterations}${hexhash}   (当前，含迭代次数)
+      v1: salt${hexhash}                (旧版 PBKDF2，假定 100000 次)
+      v0: hexhash                       (旧版无盐 SHA256)
+
     Returns:
         (bool, str|None) — (验证是否通过, 新哈希(仅升级时非None))
     """
     if '$' in stored_hash:
-        salt, _ = stored_hash.split('$', 1)
-        return secrets.compare_digest(stored_hash, _hash_password(password, salt)), None
+        parts = stored_hash.split('$')
+        salt = parts[0]
+        if len(parts) == 3:
+            iterations = int(parts[1])
+            stored_hex = parts[2]
+        else:
+            iterations = 100000
+            stored_hex = parts[1]
+        computed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), iterations)
+        if secrets.compare_digest(computed.hex(), stored_hex):
+            if iterations < PBKDF2_ITERATIONS:
+                new_hash = _hash_password(password)
+                if upgrade_callback:
+                    upgrade_callback(new_hash)
+                return True, new_hash
+            return True, None
+        return False, None
     else:
-        # 旧版格式：纯 SHA256 hexdigest（无盐）— 验证通过后自动升级
         if stored_hash == hashlib.sha256(password.encode()).hexdigest():
             new_hash = _hash_password(password)
             if upgrade_callback:
@@ -118,6 +134,34 @@ class DataManager:
         
         # 惰性缓存：首次加载后缓存，写操作同步更新，避免重复读盘
         self._students_cache = None
+        # 写入锁，防止并发写冲突
+        self._write_lock = threading.Lock()
+    
+    @staticmethod
+    def _atomic_write(path, data):
+        """原子写入 JSON 文件：tmp → fsync → replace → chmod"""
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+    
+    def _write_config(self, config):
+        """带锁的配置原子写入"""
+        with self._write_lock:
+            self._atomic_write(self.config_path, config)
+    
+    def _write_students(self, data):
+        """带锁、带备份的学生数据原子写入"""
+        with self._write_lock:
+            if os.path.exists(self.students_path):
+                try:
+                    shutil.copy2(self.students_path, self.students_path + '.bak')
+                except OSError:
+                    pass
+            self._atomic_write(self.students_path, data)
         
         # 初始化默认数据
         self._init_defaults()
@@ -132,33 +176,13 @@ class DataManager:
             self._save_students({"classes": {}})
         
         if not os.path.exists(self.config_path):
-            initial_password = "admin123"  # 固定初始密码
             default_config = {
                 "school_name": "诸葛镇中心小学",
                 "users": {
-                    "admin": _hash_password(initial_password)
+                    "admin": _hash_password("admin123")
                 }
             }
-            tmp = self.config_path + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(default_config, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.config_path)
-            os.chmod(self.config_path, 0o600)
-            
-            # 初始密码写入文件（600权限），不在终端明文输出
-            pw_file = os.path.join(self.data_dir, 'initial_password.txt')
-            with open(pw_file, 'w', encoding='utf-8') as f:
-                f.write(f"用户名: admin\n初始密码: {initial_password}\n")
-                f.write("请妥善保管此密码，登录后立即修改。\n")
-                f.write("首次登录成功后，此文件将自动删除。\n")
-            os.chmod(pw_file, 0o600)
-            
-            print(f"\n{'='*60}")
-            print(f"  系统首次启动，已生成管理员账号")
-            print(f"  用户名: admin")
-            print(f"  初始密码已保存至: {pw_file}")
-            print(f"  请妥善保管，登录后立即修改密码")
-            print(f"{'='*60}\n")
+            self._write_config(default_config)
     
     def _fix_permissions(self):
         """修复已有数据文件的权限（仅 owner 可读写）"""
@@ -191,15 +215,11 @@ class DataManager:
                     config.setdefault('password_reset_required', {})[username] = True
                     flagged += 1
             if flagged:
-                tmp = self.config_path + '.tmp'
-                with open(tmp, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, self.config_path)
+                self._write_config(config)
                 _audit(f"密码迁移: {flagged}个用户的旧版哈希已标记需重置")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.exception("密码迁移失败: %s", e)
+    
     def verify_login(self, username, password):
         """验证登录（检测到旧格式SHA256自动升级为PBKDF2）
         
@@ -220,24 +240,12 @@ class DataManager:
                 if 'password_reset_required' in config:
                     config['password_reset_required'].pop(username, None)
                 config['users'] = users
-                tmp = self.config_path + '.tmp'
-                with open(tmp, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, self.config_path)
+                self._write_config(config)
                 _audit(f"密码哈希自动升级: {username} SHA256→PBKDF2-SHA256")
             
             ok, upgraded = _verify_and_upgrade_password(stored_hash, password, _do_upgrade)
             if ok:
                 _audit(f"登录成功: {username}")
-                pw_file = os.path.join(self.data_dir, 'initial_password.txt')
-                if os.path.exists(pw_file):
-                    try:
-                        os.remove(pw_file)
-                        _audit(f"初始密码文件已自动删除: {pw_file}")
-                    except OSError:
-                        pass
                 return True
             _audit(f"登录失败: {username} (密码错误)")
             return False
@@ -252,6 +260,7 @@ class DataManager:
                 config = json.load(f)
             return config.get('password_reset_required', {}).get(username, False)
         except Exception:
+            logging.exception("检查密码重置标记失败")
             return False
     
     def reset_password_forced(self, username, new_password, current_password=None):
@@ -272,12 +281,7 @@ class DataManager:
             config['users'] = users
             if 'password_reset_required' in config:
                 config['password_reset_required'].pop(username, None)
-            tmp = self.config_path + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, self.config_path)
+            self._write_config(config)
             _audit(f"密码强制重置: {username}")
             return True, "密码已更新"
         except Exception:
@@ -296,12 +300,7 @@ class DataManager:
                 return False
             users[username] = _hash_password(new_password)
             config['users'] = users
-            tmp = self.config_path + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, self.config_path)
+            self._write_config(config)
             _audit(f"密码修改成功: {username}")
             return True
         except Exception as e:
@@ -325,16 +324,7 @@ class DataManager:
     
     def _save_students(self, data):
         self._students_cache = data
-        tmp = self.students_path + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        if os.path.exists(self.students_path):
-            try:
-                shutil.copy2(self.students_path, self.students_path + '.bak')
-            except OSError:
-                pass
-        os.replace(tmp, self.students_path)
-        os.chmod(self.students_path, 0o600)
+        self._write_students(data)
 
     def flush(self):
         """手动刷新缓存（从磁盘重新加载）"""
@@ -560,10 +550,30 @@ class DataManager:
         _audit(f"导入学生: {class_id}, 共{len(student_list)}名")
         return True, f"导入成功，共{len(student_list)}名学生"
     
-    def get_statistics(self, grade=None, class_id=None):
-        """获取统计信息（仅统计当前轮次）"""
+    def search_students(self, keyword):
+        """全校搜索学生（姓名/学号匹配，返回带 _class_id 标记的学生列表）"""
+        keyword = keyword.strip().lower()
+        results = []
         all_classes = self.get_all_classes()
-        
+        for cid, cdata in all_classes.items():
+            students = self._get_round_students(cdata)
+            for s in students:
+                if not keyword:
+                    # 空关键字返回所有学生（用于查找编辑）
+                    s_copy = dict(s)
+                    s_copy['_class_id'] = cid
+                    results.append(s_copy)
+                else:
+                    name = (s.get('name', '') or '').lower()
+                    sid = (s.get('student_number', '') or '').lower()
+                    if keyword in name or keyword in sid:
+                        s['_class_id'] = cid
+                        results.append(s)
+        return results
+    
+    def get_all_students(self, grade=None, class_id=None):
+        """获取符合条件的全部学生列表（仅当前轮次）"""
+        all_classes = self.get_all_classes()
         students = []
         if class_id:
             cdata = all_classes.get(str(class_id))
@@ -576,7 +586,11 @@ class DataManager:
         else:
             for cid, cdata in all_classes.items():
                 students.extend(self._get_round_students(cdata))
-        
+        return students
+    
+    def get_statistics(self, grade=None, class_id=None):
+        """获取统计信息（仅统计当前轮次）"""
+        students = self.get_all_students(grade=grade, class_id=class_id)
         dist = compute_grade_distribution(students)
         total = dist['total']
         counts = dist['counts']

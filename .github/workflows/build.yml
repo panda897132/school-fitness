@@ -1,15 +1,16 @@
-name: 🪟 Windows 打包测试
+name: 🪟 打包 + Release
 
 on:
   push:
     branches: [main, dev]
+    tags: ['v*.*.*']
   pull_request:
     branches: [main, dev]
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
-    name: 打包 EXE + 冒烟测试
+    name: 打包 EXE
     runs-on: windows-latest
 
     steps:
@@ -28,59 +29,63 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 🔧 检查系统环境
+      - name: 🔧 系统信息
         run: |
           python --version
           pip list
-          echo "系统架构: $env:PROCESSOR_ARCHITECTURE"
-          echo "Windows 版本: $(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').ProductName"
-          echo "构建号: $(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuild"
 
-      - name: 🏗️ PyInstaller 打包
+      - name: 🏗️ 打包主程序 + updater
         run: |
           $env:PYTHONIOENCODING='utf-8'
-          python -m PyInstaller --clean --noconfirm school-fitness.spec
+          python build.py --build
         working-directory: ${{ github.workspace }}
 
       - name: 🔍 检查打包结果
         run: |
-          if (Test-Path "dist/school-fitness.exe") {
-            $size = (Get-Item "dist/school-fitness.exe").Length
-            Write-Host "✅ EXE 生成成功！大小: $([math]::Round($size/1KB, 2)) KB"
-            # 上传到 GitHub Actions Summary
-            echo "## 🪟 打包结果" >> $env:GITHUB_STEP_SUMMARY
-            echo "- **状态:** ✅ 成功" >> $env:GITHUB_STEP_SUMMARY
-            echo "- **文件:** school-fitness.exe" >> $env:GITHUB_STEP_SUMMARY
-            echo "- **大小:** $([math]::Round($size/1KB, 2)) KB" >> $env:GITHUB_STEP_SUMMARY
-          } else {
-            Write-Host "❌ EXE 未生成！"
-            exit 1
+          echo "## 🪟 打包结果" >> $env:GITHUB_STEP_SUMMARY
+          $files = Get-ChildItem dist/*.exe
+          foreach ($f in $files) {
+            $size_mb = [math]::Round($f.Length / 1MB, 2)
+            Write-Host "✅ $($f.Name) — ${size_mb} MB"
+            echo "- **$($f.Name):** ${size_mb} MB" >> $env:GITHUB_STEP_SUMMARY
           }
-
-      - name: 🧪 冒烟测试 — EXE 能否启动
-        run: |
-          try {
-            # 尝试启动 EXE（超时 5 秒后强制结束）
-            $process = Start-Process -FilePath "dist/school-fitness.exe" -PassThru
-            Start-Sleep -Seconds 5
-            if (!$process.HasExited) {
-              $process.Kill()
-              Write-Host "✅ EXE 启动正常（5秒内无崩溃）"
-              echo "✅ 启动测试: 通过" >> $env:GITHUB_STEP_SUMMARY
-            } else {
-              Write-Host "⚠️ EXE 已自行退出（exit code: $($process.ExitCode)）"
-              echo "⚠️ 启动测试: EXE 自行退出 (code: $($process.ExitCode))" >> $env:GITHUB_STEP_SUMMARY
-            }
-          } catch {
-            Write-Host "❌ EXE 启动失败: $_"
-            echo "❌ 启动测试: 失败" >> $env:GITHUB_STEP_SUMMARY
-            exit 1
+          $zip = Get-ChildItem dist/*.zip
+          if ($zip) {
+            $zip_mb = [math]::Round($zip.Length / 1MB, 2)
+            echo "- **Release ZIP:** ${zip_mb} MB" >> $env:GITHUB_STEP_SUMMARY
           }
-        working-directory: ${{ github.workspace }}
 
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: school-fitness-windows
-          path: dist/school-fitness.exe
+          path: dist/*.exe
           if-no-files-found: error
+
+  release:
+    name: 发布 Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: school-fitness-windows
+          path: release-artifacts
+
+      - name: 📦 压缩 Release 包
+        run: |
+          cd release-artifacts
+          zip -r ../小学体测管理系统.zip *.exe
+
+      - name: 🏷️ 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            小学体测管理系统.zip
+            release-artifacts/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

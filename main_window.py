@@ -1819,14 +1819,30 @@ class MainWindow:
         show_grade_analysis(self, grade=grade, show_selector=show_selector)
     
     def _show_help(self):
-        messagebox.showinfo('使用说明',
-            '诸葛镇中心小学 — 学生体质健康管理系统\n\n'
-            '1. 选择年级 → 选择班级 → 查看学生数据\n'
-            '2. 文件 → 导入Excel数据：导入模板格式的xlsx文件\n'
-            '3. 文件 → 导出统计报告：导出分析报告\n'
-            '4. 数据 → 添加/编辑/删除学生\n'
-            '5. 统计 → 查看各类统计图表'
-        )
+        import os as _os
+        from tkinter import scrolledtext as _st
+
+        manual_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '用户手册.md')
+        if not _os.path.exists(manual_path):
+            messagebox.showwarning('提示', '未找到用户手册文件')
+            return
+
+        dialog = tk.Toplevel(self.window)
+        dialog.title('使用说明 — 用户手册')
+        dialog.geometry('900x650')
+        dialog.transient(self.window)
+        dialog.grab_set()
+
+        text = _st.ScrolledText(dialog, wrap='word', font=(TK_FONT, 10))
+        text.pack(fill='both', expand=True, padx=8, pady=8)
+
+        try:
+            with open(manual_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            text.insert('1.0', content)
+        except Exception as e:
+            text.insert('1.0', f'无法读取手册: {e}')
+        text.config(state='disabled')
     
     def _check_update(self):
         from updater import UpdateDialog

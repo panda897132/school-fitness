@@ -136,6 +136,13 @@ class DataManager:
         self._students_cache = None
         # 写入锁，防止并发写冲突
         self._write_lock = threading.Lock()
+        
+        # 初始化默认数据（必须在第一次 login 之前，否则 app_config.json 不存在）
+        self._init_defaults()
+        # 修复已有文件的权限
+        self._fix_permissions()
+        # 检测并标记需要迁移的旧版密码哈希
+        self._migrate_passwords()
     
     @staticmethod
     def _atomic_write(path, data):
@@ -162,13 +169,6 @@ class DataManager:
                 except OSError:
                     pass
             self._atomic_write(self.students_path, data)
-        
-        # 初始化默认数据
-        self._init_defaults()
-        # 修复已有文件的权限
-        self._fix_permissions()
-        # 检测并标记需要迁移的旧版密码哈希
-        self._migrate_passwords()
     
     def _init_defaults(self):
         """初始化默认数据文件"""

@@ -80,14 +80,21 @@ jobs:
       - name: 📦 压缩 Release 包
         run: |
           cd release-artifacts
-          zip -r ../小学体测管理系统.zip *.exe
+          # Rename Chinese-named EXE to ASCII for GitHub Releases
+          for f in *.exe; do
+            case "$f" in
+              *管理系统*) mv "$f" "SchoolFitness.exe" ;;
+            esac
+          done
+          zip -r ../SchoolFitness.zip *.exe
 
       - name: 🏷️ 创建 Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            小学体测管理系统.zip
-            release-artifacts/*.exe
+            SchoolFitness.zip
+            release-artifacts/SchoolFitness.exe
+            release-artifacts/updater.exe
           generate_release_notes: true
           draft: false
           prerelease: false

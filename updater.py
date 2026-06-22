@@ -47,7 +47,15 @@ def check_latest_version():
     if not assets:
         return None, "Release 中没有可下载的附件"
 
-    asset = assets[0]
+    # 优先选主程序 EXE，回退到第一个附件
+    asset = None
+    for a in assets:
+        name = a.get("name", "")
+        if name == "SchoolFitness.exe" or "管理系统" in name:
+            asset = a
+            break
+    if not asset:
+        asset = assets[0]
     return (
         tag,
         data.get("html_url", RELEASE_URL),

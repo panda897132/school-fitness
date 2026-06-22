@@ -40,20 +40,19 @@ jobs:
           python build.py --build
         working-directory: ${{ github.workspace }}
 
-      - name: 🔥 冒烟测试
+      - name: Smoke test
         shell: powershell
         run: |
           $exe = Get-ChildItem dist/*.exe | Where-Object { $_.Name -notlike 'updater*' } | Select-Object -First 1
-          Write-Host "启动 $($exe.Name) 进行冒烟测试..."
+          Write-Host "Starting $($exe.Name) for smoke test..."
           $proc = Start-Process -FilePath $exe.FullName -PassThru
           Start-Sleep -Seconds 6
           if ($proc.HasExited) {
-            $msg = "❌ EXE 启动后立即退出（退出码: $($proc.ExitCode)）"
+            $msg = "EXE exited immediately (exit code: $($proc.ExitCode))"
             Write-Host $msg
-            # 尝试读取 stderr（如果有的话）
             throw $msg
           }
-          Write-Host "✅ 冒烟测试通过 — EXE 运行正常"
+          Write-Host "Smoke test PASSED"
           $proc.Kill()
 
       - name: 🔍 检查打包结果

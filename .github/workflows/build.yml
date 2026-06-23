@@ -59,7 +59,7 @@ jobs:
           python --version
           pip list
 
-      - name: 🏗️ 打包主程序 + updater
+      - name: 🏗️ 打包主程序
         run: |
           $env:PYTHONIOENCODING='utf-8'
           python build.py --build
@@ -68,7 +68,7 @@ jobs:
       - name: Smoke test
         shell: powershell
         run: |
-          $exe = Get-ChildItem dist/*.exe | Where-Object { $_.Name -notlike 'updater*' } | Select-Object -First 1
+          $exe = Get-ChildItem dist/*.exe | Select-Object -First 1
           Write-Host "Starting $($exe.Name) for smoke test..."
           $proc = Start-Process -FilePath $exe.FullName -PassThru
           Start-Sleep -Seconds 6
@@ -134,7 +134,6 @@ jobs:
           files: |
             SchoolFitness.zip
             release-artifacts/SchoolFitness.exe
-            release-artifacts/updater.exe
           generate_release_notes: true
           draft: false
           prerelease: false

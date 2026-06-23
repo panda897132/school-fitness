@@ -141,33 +141,29 @@ def download_update(url, progress_callback=None):
     return tmp_path
 
 
-def launch_updater(old_exe, new_exe, app_dir):
-    """启动独立升级进程，当前进程退出"""
-    updater_exe = os.path.join(os.path.dirname(old_exe), "updater.exe")
-    if not os.path.exists(updater_exe):
-        updater_exe = os.path.join(app_dir, "updater.exe")
-    args = json.dumps({
-        "old_exe": old_exe,
-        "new_exe": new_exe,
-        "app_dir": app_dir,
-    })
-    try:
-        subprocess.Popen([updater_exe, args], cwd=os.path.dirname(old_exe))
-    except Exception:
-        subprocess.Popen([sys.executable, "-c", """
-import json, os, sys, time, subprocess
-args = json.loads(sys.argv[1])
-time.sleep(6)
-for _ in range(10):
-    try:
-        os.replace(args['new_exe'], args['old_exe'])
-        break
-    except PermissionError:
-        time.sleep(0.5)
-if os.name != 'nt':
-    os.chmod(args['old_exe'], 0o755)
-subprocess.Popen([args['old_exe']], cwd=args.get('app_dir', os.path.dirname(args['old_exe'])))
-""", args], cwd=os.path.dirname(old_exe))
+def _launch_updater_bat(old_exe, new_exe, app_dir):
+    """用 .bat 脚本替换 EXE（零 C 调用，无崩溃风险）
+
+    写入 _upgrade.bat → 静默启动 cmd.exe /c → 退出当前进程
+    bat 等待 3s 后：move 旧 exe → .bak → move 新 exe → 启动 → 自删
+    """
+    bat_path = os.path.join(app_dir, "_upgrade.bat")
+    bat_content = (
+        '@echo off\r\n'
+        'timeout /t 3 /nobreak >nul\r\n'
+        f'move /y "{old_exe}" "{old_exe}.bak"\r\n'
+        f'move /y "{new_exe}" "{old_exe}"\r\n'
+        f'if exist "{old_exe}" (\r\n'
+        f'  start "" "{old_exe}"\r\n'
+        f'  del "{old_exe}.bak"\r\n'
+        ')\r\n'
+        'del "%~f0"\r\n'
+    )
+    with open(bat_path, 'wb') as f:
+        f.write(bat_content.encode('ascii'))
+
+    creationflags = 0x08000000 if os.name == 'nt' else 0
+    subprocess.Popen(['cmd.exe', '/c', bat_path], cwd=app_dir, creationflags=creationflags)
 
 
 class UpdateDialog:
@@ -270,7 +266,7 @@ class UpdateDialog:
             old_exe = os.path.abspath(sys.argv[0])
         app_dir = os.path.dirname(old_exe)
 
-        launch_updater(old_exe, tmp_path, app_dir)
+        _launch_updater_bat(old_exe, tmp_path, app_dir)
         self.dialog.after(100, self._do_exit)
 
     def _do_exit(self):

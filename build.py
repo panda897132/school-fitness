@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """诸葛镇中心小学 体测管理系统 — PyInstaller 打包脚本"""
 
-import os, sys, shutil, subprocess, json
+import os, sys, shutil, subprocess
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent
 APP_NAME = "小学体测管理系统"
 SPEC_FILE = PROJECT_DIR / f"{APP_NAME}.spec"
-UPDATER_SPEC = PROJECT_DIR / "updater.spec"
 DIST_DIR = PROJECT_DIR / "dist"
 BUILD_DIR = PROJECT_DIR / "build"
 
@@ -41,65 +40,8 @@ def build_app():
         return True
     return False
 
-def build_updater():
-    print(f"▶ 打包升级程序: updater")
-    # 生成 updater.spec
-    _write_updater_spec()
-    cmd = [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", str(UPDATER_SPEC)]
-    result = subprocess.run(cmd, cwd=str(PROJECT_DIR))
-    if result.returncode != 0:
-        return False
-
-    exe_name = "updater.exe" if sys.platform == "win32" else "updater"
-    exe = DIST_DIR / exe_name
-    if exe.exists():
-        size_kb = exe.stat().st_size / 1024
-        print(f"  ✅ updater ({size_kb:.1f} KB)")
-        return True
-    return False
-
-def _write_updater_spec():
-    content = f"""# -*- mode: python ; coding: utf-8 -*-
-a = Analysis(
-    ['_updater_standalone.py'],
-    pathex=[],
-    binaries=[],
-    datas=[],
-    hiddenimports=[],
-    hookspath=[],
-    hooksconfig={{}},
-    runtime_hooks=[],
-    excludes=['matplotlib', 'numpy', 'openpyxl', 'PIL', 'tkinter'],
-    noarchive=False,
-    optimize=0,
-)
-pyz = PYZ(a.pure)
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
-    [],
-    name='updater',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    icon=None,
-)
-coll = COLLECT(exe, a.binaries, a.datas, name='updater')
-"""
-    UPDATER_SPEC.write_text(content, encoding="utf-8")
-
 def archive_release():
-    """将主程序 + updater 打包为 release ZIP"""
+    """将主程序打包为 release ZIP"""
     import zipfile
     zip_name = DIST_DIR / f"{APP_NAME}.zip"
     with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -119,7 +61,7 @@ def build():
     if not check_pyinstaller():
         return False
 
-    ok = build_app() and build_updater()
+    ok = build_app()
     if ok:
         archive_release()
         print(f"\n✅ 全部打包成功 → {DIST_DIR}")

@@ -2090,7 +2090,7 @@ class MainWindow:
 
         dialog = tk.Toplevel(self.window)
         dialog.title('更新日志')
-        dialog.geometry('750x550')
+        dialog.geometry('700x450')
         dialog.transient(self.window)
         dialog.grab_set()
 
@@ -2102,23 +2102,20 @@ class MainWindow:
 
         try:
             req = Request(
-                f'https://api.github.com/repos/{APP_REPO}/releases?per_page=20',
+                f'https://api.github.com/repos/{APP_REPO}/releases/latest',
                 headers={"User-Agent": "school-fitness/1.0"}
             )
             resp = urlopen(req, timeout=10)
-            releases = _json.loads(resp.read().decode())
+            r = _json.loads(resp.read().decode())
             text.config(state='normal')
             text.delete('1.0', 'end')
-            for r in releases:
-                tag = r.get('tag_name', '')
-                name = r.get('name', '') or tag
-                body = (r.get('body', '') or '').strip()
-                published = r.get('published_at', '')[:10]
-                text.insert('end', f'{"="*50}\n')
-                text.insert('end', f'{name}  ({published})\n', 'tag')
-                text.insert('end', f'{"="*50}\n')
-                if body:
-                    text.insert('end', body + '\n\n')
+            tag = r.get('tag_name', '')
+            body = (r.get('body', '') or '').strip()
+            published = r.get('published_at', '')[:10]
+            text.insert('end', f'{tag}  ({published})\n', 'tag')
+            text.insert('end', '-' * 40 + '\n')
+            if body:
+                text.insert('end', body)
             text.tag_config('tag', font=(TK_FONT, 11, 'bold'), foreground='#1976d2')
         except Exception as e:
             text.config(state='normal')

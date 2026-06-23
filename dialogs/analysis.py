@@ -857,34 +857,10 @@ def show_grade_analysis(mw, grade=None, show_selector=True):
                 _render(GRADE_NAMES.index(selected) + 1)
         grade_combo.bind('<<ComboboxSelected>>', _on_grade_change)
 
-    # ---- 导出按钮 ----
+    # ---- 底部按钮 ----
     btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
     btn_frame.pack(fill='x', side='bottom', padx=8, pady=6)
 
-    def _export_grade_data():
-        from excel_io import export_statistics_report
-        filepath = filedialog.asksaveasfilename(
-            title='导出年级分析报告',
-            defaultextension='.xlsx',
-            filetypes=[('Excel文件', '*.xlsx')],
-            parent=dialog
-        )
-        if not filepath:
-            return
-        g = grade
-        if show_selector:
-            selected = grade_var.get()
-            if selected in GRADE_NAMES:
-                g = GRADE_NAMES.index(selected) + 1
-        success, msg = export_statistics_report(mw.dm, filepath, scope='年级', grade=g)
-        if success:
-            messagebox.showinfo('导出成功', msg, parent=dialog)
-        else:
-            messagebox.showerror('导出失败', msg, parent=dialog)
-
-    tk.Button(btn_frame, text='📤 导出数据', command=_export_grade_data,
-              bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 10, 'bold'),
-              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
     tk.Button(btn_frame, text='关闭', command=dialog.destroy,
               bg=COLOR_NEUTRAL, fg='white', font=(TK_FONT, 10),
               relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)

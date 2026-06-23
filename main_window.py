@@ -2101,21 +2101,44 @@ class MainWindow:
         dialog.update()
 
         try:
+            # 获取最新 Release
             req = Request(
                 f'https://api.github.com/repos/{APP_REPO}/releases/latest',
                 headers={"User-Agent": "school-fitness/1.0"}
             )
             resp = urlopen(req, timeout=10)
-            r = _json.loads(resp.read().decode())
+            latest = _json.loads(resp.read().decode())
+            latest_tag = latest.get('tag_name', '')
+            published = latest.get('published_at', '')[:10]
+            body = (latest.get('body', '') or '').strip()
+
+            cur_tag = f'v{APP_VERSION}'
             text.config(state='normal')
             text.delete('1.0', 'end')
-            tag = r.get('tag_name', '')
-            body = (r.get('body', '') or '').strip()
-            published = r.get('published_at', '')[:10]
-            text.insert('end', f'{tag}  ({published})\n', 'tag')
+
+            if cur_tag == latest_tag:
+                text.insert('end', '当前已是最新版本\n\n', 'tag')
+            else:
+                text.insert('end', f'{cur_tag} → {latest_tag}  ({published})\n\n', 'tag')
+                # 获取版本间的提交记录
+                try:
+                    req2 = Request(
+                        f'https://api.github.com/repos/{APP_REPO}/compare/{cur_tag}...{latest_tag}',
+                        headers={"User-Agent": "school-fitness/1.0"}
+                    )
+                    resp2 = urlopen(req2, timeout=10)
+                    diff = _json.loads(resp2.read().decode())
+                    text.insert('end', f'共 {diff.get("total_commits", 0)} 次提交:\n\n')
+                    for c in diff.get('commits', []):
+                        msg = c.get('commit', {}).get('message', '').split('\n')[0]
+                        text.insert('end', f'  • {msg}\n')
+                except Exception:
+                    text.insert('end', '(无法加载提交详情)\n')
+                text.insert('end', '\n')
+
             text.insert('end', '-' * 40 + '\n')
             if body:
-                text.insert('end', body)
+                text.insert('end', '\n' + body)
             text.tag_config('tag', font=(TK_FONT, 11, 'bold'), foreground='#1976d2')
         except Exception as e:
             text.config(state='normal')

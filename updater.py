@@ -149,7 +149,6 @@ def launch_updater(old_exe, new_exe, app_dir):
     args = json.dumps({
         "old_exe": old_exe,
         "new_exe": new_exe,
-        "pid": os.getpid(),
         "app_dir": app_dir,
     })
     try:

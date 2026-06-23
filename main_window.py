@@ -1543,8 +1543,10 @@ class MainWindow:
         dialog.bind('<Escape>', lambda e: dialog.destroy())
         
         dialog.update_idletasks()
-        dialog.geometry(f'{max(420, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight()}')
-        center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight())
+        w = max(420, dialog.winfo_reqwidth())
+        h = int(w * 3 / 4)
+        dialog.geometry(f'{w}x{h}')
+        center_window(dialog, w, h)
     
     def _delete_class(self):
         """删除班级"""

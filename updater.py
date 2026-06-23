@@ -27,9 +27,16 @@ def _parse_version(v):
     return (0, 0, 0)
 
 
-def _make_ssl_context():
-    """创建兼容 Windows 7 的 SSL 上下文（Win7 默认不启用 TLS 1.2）"""
-    ctx = ssl.create_default_context()
+def _make_ssl_context(verify=True):
+    """创建兼容 Windows 7 的 SSL 上下文
+
+    关键问题: Windows 7 默认不启用 TLS 1.2，且系统证书存储可能不含现代 CA。
+    verify=False 时跳过证书验证（Win7 全场景兼容）。
+    """
+    if verify:
+        ctx = ssl.create_default_context()
+    else:
+        ctx = ssl._create_unverified_context()
     try:
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     except AttributeError:
@@ -41,13 +48,22 @@ def _make_ssl_context():
 
 
 def _urlopen(url, timeout=10):
-    """带 SSL 兼容的 urlopen（Windows 7 TLS 1.2 支持）"""
+    """带 SSL 兼容的 urlopen（Windows 7 TLS 1.2 支持）
+
+    策略：先验证证书，证书失败则回退到不验证（Win7 证书存储过旧时）。
+    """
+    import logging as _logging
     req = Request(url, headers={
         "User-Agent": "school-fitness-updater/1.0",
         "Accept": "application/vnd.github.v3+json",
     })
-    ctx = _make_ssl_context()
-    return urlopen(req, timeout=timeout, context=ctx)
+    try:
+        ctx = _make_ssl_context(verify=True)
+        return urlopen(req, timeout=timeout, context=ctx)
+    except ssl.SSLError:
+        _logging.warning("SSL 握手/证书验证失败，回退到不验证模式")
+        ctx = _make_ssl_context(verify=False)
+        return urlopen(req, timeout=timeout, context=ctx)
 
 
 def check_latest_version():

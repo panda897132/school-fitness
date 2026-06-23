@@ -57,13 +57,22 @@ def _urlopen(url, timeout=10):
         "User-Agent": "school-fitness-updater/1.0",
         "Accept": "application/vnd.github.v3+json",
     })
-    try:
-        ctx = _make_ssl_context(verify=True)
-        return urlopen(req, timeout=timeout, context=ctx)
-    except ssl.SSLError:
-        _logging.warning("SSL 握手/证书验证失败，回退到不验证模式")
-        ctx = _make_ssl_context(verify=False)
-        return urlopen(req, timeout=timeout, context=ctx)
+    # urlopen 把 ssl.SSLError 包装在 URLError 里，所以 catch ssl.SSLError 无效
+    for attempt, verify in enumerate([True, False]):
+        try:
+            ctx = _make_ssl_context(verify=verify)
+            return urlopen(req, timeout=timeout, context=ctx)
+        except URLError as e:
+            is_ssl = isinstance(e.reason, ssl.SSLError)
+            if attempt == 0 and is_ssl:
+                _logging.warning("SSL 证书验证失败，回退到不验证模式")
+                continue
+            raise
+        except ssl.SSLError:
+            if attempt == 0:
+                _logging.warning("SSL 握手失败，回退到不验证模式")
+                continue
+            raise
 
 
 def check_latest_version():
@@ -76,7 +85,11 @@ def check_latest_version():
             return None, "未配置更新源（请管理员在 GitHub 创建 Release）"
         return None, f"服务器错误 ({e.code})"
     except (URLError, json.JSONDecodeError, OSError) as e:
-        return None, f"无法连接 ({e.reason if hasattr(e, 'reason') else e})"
+        raw = str(e)
+        if 'CERTIFICATE_VERIFY_FAILED' in raw:
+            return None, "SSL 证书验证失败，请检查系统时间或网络环境"
+        reason = getattr(e, 'reason', e)
+        return None, f"无法连接 ({reason})"
 
     tag = data.get("tag_name", "")
     if not tag:

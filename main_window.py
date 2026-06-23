@@ -7,7 +7,7 @@ import os
 import threading
 import openpyxl
 from config import (
-    MAIN_WINDOW_SIZE, APP_TITLE, GRADE_NAMES, GRADE_ITEMS,
+    MAIN_WINDOW_SIZE, APP_TITLE, APP_REPO, GRADE_NAMES, GRADE_ITEMS,
     STUDENT_COLUMNS, TK_FONT, NUM_TO_CN,
     COLOR_PRIMARY, COLOR_PRIMARY_DARK, COLOR_ACCENT,
     COLOR_SUCCESS, COLOR_DANGER, COLOR_WARNING, COLOR_NEUTRAL,
@@ -112,6 +112,7 @@ class MainWindow:
         help_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
         menubar.add_cascade(label='帮助', menu=help_menu)
         help_menu.add_command(label='使用说明', command=self._show_help)
+        help_menu.add_command(label='更新日志', command=self._show_changelog)
         help_menu.add_command(label='检查更新...', command=self._check_update)
         help_menu.add_separator()
         help_menu.add_command(label='关于', command=self._show_about)
@@ -2082,6 +2083,50 @@ class MainWindow:
             text.insert('1.0', f'无法读取手册: {e}')
         text.config(state='disabled')
     
+    def _show_changelog(self):
+        from tkinter import scrolledtext as _st
+        from urllib.request import urlopen, Request
+        import json as _json
+
+        dialog = tk.Toplevel(self.window)
+        dialog.title('更新日志')
+        dialog.geometry('750x550')
+        dialog.transient(self.window)
+        dialog.grab_set()
+
+        text = _st.ScrolledText(dialog, wrap='word', font=(TK_FONT, 10))
+        text.pack(fill='both', expand=True, padx=8, pady=8)
+        text.insert('1.0', '正在加载更新日志...\n')
+        text.config(state='disabled')
+        dialog.update()
+
+        try:
+            req = Request(
+                f'https://api.github.com/repos/{APP_REPO}/releases?per_page=20',
+                headers={"User-Agent": "school-fitness/1.0"}
+            )
+            resp = urlopen(req, timeout=10)
+            releases = _json.loads(resp.read().decode())
+            text.config(state='normal')
+            text.delete('1.0', 'end')
+            for r in releases:
+                tag = r.get('tag_name', '')
+                name = r.get('name', '') or tag
+                body = (r.get('body', '') or '').strip()
+                published = r.get('published_at', '')[:10]
+                text.insert('end', f'{"="*50}\n')
+                text.insert('end', f'{name}  ({published})\n', 'tag')
+                text.insert('end', f'{"="*50}\n')
+                if body:
+                    text.insert('end', body + '\n\n')
+            text.tag_config('tag', font=(TK_FONT, 11, 'bold'), foreground='#1976d2')
+        except Exception as e:
+            text.config(state='normal')
+            text.delete('1.0', 'end')
+            text.insert('1.0', f'无法加载更新日志: {e}\n\n'
+                              f'请访问 https://github.com/{APP_REPO}/releases 查看')
+        text.config(state='disabled')
+
     def _check_update(self):
         from updater import UpdateDialog
         UpdateDialog(self.window)

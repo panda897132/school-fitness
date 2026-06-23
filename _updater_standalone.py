@@ -22,7 +22,7 @@ def main():
 
         # 不检查 PID 是否存在——PyInstaller 中 os.kill/ctypes 都可能触发
         # C 层异常导致崩溃。固定等待主进程退出足够安全。
-        time.sleep(4)
+        time.sleep(6)
 
         for _ in range(10):
             try:
@@ -38,7 +38,9 @@ def main():
 
         subprocess.Popen([old_exe], cwd=app_dir)
     except Exception:
-        pass  # 静默退出，不弹 Unhandled exception 对话框
+        # 静默退出——不弹"Unhandled exception"对话框。升级失败后
+        # 用户重启旧版可重试检查更新
+        pass
 
 
 if __name__ == "__main__":

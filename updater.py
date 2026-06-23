@@ -158,7 +158,7 @@ def launch_updater(old_exe, new_exe, app_dir):
         subprocess.Popen([sys.executable, "-c", """
 import json, os, sys, time, subprocess
 args = json.loads(sys.argv[1])
-time.sleep(4)
+time.sleep(6)
 for _ in range(10):
     try:
         os.replace(args['new_exe'], args['old_exe'])

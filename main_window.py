@@ -1434,51 +1434,51 @@ class MainWindow:
         grade_var = tk.StringVar(value=default_grade)
         
         # ─── 顶部标题栏 ───
-        header = tk.Frame(dialog, bg=COLOR_ACCENT, height=44)
+        header = tk.Frame(dialog, bg=COLOR_ACCENT, height=36)
         header.pack(fill='x')
         header.pack_propagate(False)
-        tk.Label(header, text='✚ 添加新班级', font=(TK_FONT, 14, 'bold'),
+        tk.Label(header, text='✚ 添加新班级', font=(TK_FONT, 13, 'bold'),
                  fg='white', bg=COLOR_ACCENT).pack(expand=True)
         
         # ─── 主内容区 ───
-        main = tk.Frame(dialog, bg=COLOR_BG_WHITE, padx=24, pady=18)
+        main = tk.Frame(dialog, bg=COLOR_BG_WHITE, padx=20, pady=12)
         main.pack(fill='both', expand=True)
         
         # 年级选择
-        tk.Label(main, text='所属年级', font=(TK_FONT, 10),
+        tk.Label(main, text='所属年级', font=(TK_FONT, 9),
                  fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
         grade_combo = ttk.Combobox(main, textvariable=grade_var, values=GRADE_NAMES,
-                                    state='readonly', font=(TK_FONT, 12), height=8)
+                                    state='readonly', font=(TK_FONT, 11))
         if default_grade_name and default_grade_name in GRADE_NAMES:
             grade_combo.current(GRADE_NAMES.index(default_grade_name))
         else:
             grade_combo.current(0)
-        grade_combo.pack(fill='x', pady=(3, 16))
+        grade_combo.pack(fill='x', pady=(2, 10))
         
         # 班级编号
-        tk.Label(main, text='班级编号', font=(TK_FONT, 10),
+        tk.Label(main, text='班级编号', font=(TK_FONT, 9),
                  fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
         id_row = tk.Frame(main, bg=COLOR_BG_WHITE)
-        id_row.pack(fill='x', pady=(3, 2))
-        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 12), bd=1, relief='solid',
+        id_row.pack(fill='x', pady=(2, 1))
+        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), bd=1, relief='solid',
                                   highlightthickness=0)
-        class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
+        class_id_entry.pack(side='left', fill='x', expand=True, ipady=2)
         class_id_entry.bind('<Return>', lambda e: do_add())
-        tk.Label(main, text='例: 101 = 一(1)班, 502 = 五(2)班', font=(TK_FONT, 8),
-                 fg='#999', bg=COLOR_BG_WHITE, anchor='w').pack(fill='x', pady=(0, 16))
+        tk.Label(main, text='例: 101 = 一(1)班', font=(TK_FONT, 8),
+                 fg='#999', bg=COLOR_BG_WHITE, anchor='w').pack(fill='x', pady=(0, 10))
         
         # ─── 已有班级 ───
         existing_frame = tk.Frame(main, bg='#f5f7fa', bd=1, relief='solid',
                                   highlightbackground='#e0e0e0', highlightthickness=1)
-        existing_frame.pack(fill='x', pady=(0, 18))
+        existing_frame.pack(fill='x', pady=(0, 10))
         
         existing_header_frame = tk.Frame(existing_frame, bg='#f5f7fa')
-        existing_header_frame.pack(fill='x', padx=10, pady=(8, 4))
-        tk.Label(existing_header_frame, text='当前已有班级', font=(TK_FONT, 9, 'bold'),
+        existing_header_frame.pack(fill='x', padx=8, pady=(4, 2))
+        tk.Label(existing_header_frame, text='已有班级', font=(TK_FONT, 9, 'bold'),
                  fg='#555', bg='#f5f7fa').pack(side='left')
         
         tag_container = tk.Frame(existing_frame, bg='#f5f7fa')
-        tag_container.pack(fill='x', padx=10, pady=(0, 8))
+        tag_container.pack(fill='x', padx=8, pady=(0, 4))
         
         def _refresh_existing():
             for w in tag_container.winfo_children():
@@ -1543,8 +1543,8 @@ class MainWindow:
         dialog.bind('<Escape>', lambda e: dialog.destroy())
         
         dialog.update_idletasks()
-        dialog.geometry(f'{max(380, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight() + 10}')
-        center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight() + 10)
+        dialog.geometry(f'{max(360, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight()}')
+        center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight())
     
     def _delete_class(self):
         """删除班级"""

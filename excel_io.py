@@ -436,6 +436,11 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
                 raw = ws.cell(row=row, column=col_idx).value
                 if _is_valid_value(raw):
                     parsed = _parse_number(raw)
+                    if parsed is not None and item_name == '50*8折返跑' and 0 < parsed < 60:
+                        minutes = int(parsed)
+                        secs = round((parsed - minutes) * 100)
+                        if 0 <= secs < 60:
+                            parsed = minutes * 60 + secs
                     if parsed is not None:
                         tests[item_name] = parsed
                     else:
@@ -622,6 +627,11 @@ def _import_old_format(wb, grade_sheet_names):
                         raw = ws.cell(row=row, column=col_idx).value
                         if _is_valid_value(raw):
                             parsed = _parse_number(raw)
+                            if parsed is not None and item_name == '50*8折返跑' and 0 < parsed < 60:
+                                minutes = int(parsed)
+                                secs = round((parsed - minutes) * 100)
+                                if 0 <= secs < 60:
+                                    parsed = minutes * 60 + secs
                             if parsed is not None:
                                 tests[item_name] = parsed
                             else:
@@ -670,15 +680,27 @@ def _import_old_format(wb, grade_sheet_names):
     }
 
 
-def _to_time_str(seconds):
-    """将秒数转换为 m.ss 小数格式（与导入格式一致）
+def _to_time_str(val):
+    """将秒数或 m.ss 格式转为 m.ss 小数格式（与导入格式一致）
 
     例: 103秒 → 1.43（1分43秒）
+         1.43 → 1.43（m.ss格式原样保留）
     """
-    if seconds is None or seconds == 0:
+    if val is None or val == '':
         return ''
-    m = int(seconds // 60)
-    s = int(seconds % 60)
+    try:
+        v = float(val)
+    except (ValueError, TypeError):
+        return str(val)
+    if v <= 0:
+        return ''
+    if 0 < v < 60:
+        m = int(v)
+        s = round((v - m) * 100)
+        if 0 <= s < 60:
+            return f"{m}.{s:02d}"
+    m = int(v // 60)
+    s = int(v % 60)
     return f"{m}.{s:02d}"
 
 

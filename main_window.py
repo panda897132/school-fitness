@@ -1546,7 +1546,13 @@ class MainWindow:
                             data['tests'][item_name] = float(m.group(1)) * 60 + float(m.group(2))
                         else:
                             try:
-                                data['tests'][item_name] = float(val)
+                                v = float(val)
+                                if 0 < v < 60:
+                                    minutes = int(v)
+                                    secs = round((v - minutes) * 100)
+                                    if 0 <= secs < 60:
+                                        v = minutes * 60 + secs
+                                data['tests'][item_name] = v
                             except ValueError:
                                 data['tests'][item_name] = 0
                     else:

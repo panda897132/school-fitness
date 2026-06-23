@@ -2,7 +2,8 @@
 
 import tkinter as tk
 from tkinter import messagebox
-from config import LOGIN_WINDOW_SIZE, APP_TITLE, DEFAULT_USERNAME
+from config import LOGIN_WINDOW_SIZE, APP_TITLE, DEFAULT_USERNAME, TK_FONT
+from utils import center_window
 
 
 class LoginWindow:
@@ -23,17 +24,9 @@ class LoginWindow:
         
         # 窗口居中
         w, h = LOGIN_WINDOW_SIZE
-        self._center_window(self.window, w, h)
+        center_window(self.window, w, h)
         
         self._build_ui()
-    
-    def _center_window(self, win, width, height):
-        """窗口居中"""
-        screen_w = win.winfo_screenwidth()
-        screen_h = win.winfo_screenheight()
-        x = (screen_w - width) // 2
-        y = (screen_h - height) // 2
-        win.geometry(f"{width}x{height}+{x}+{y}")
     
     def _build_ui(self):
         """构建登录界面"""
@@ -49,7 +42,7 @@ class LoginWindow:
         tk.Label(
             title_frame, 
             text=APP_TITLE,
-            font=('Microsoft YaHei', 16, 'bold'),
+            font=(TK_FONT, 16, 'bold'),
             fg='white', bg='#1a73e8'
         ).pack(expand=True)
         
@@ -64,22 +57,15 @@ class LoginWindow:
         inner = tk.Frame(form_frame, bg='white')
         inner.pack(expand=True)
         
-        # 图标/标题
-        tk.Label(
-            inner, text='🔐 系统登录', 
-            font=('Microsoft YaHei', 14, 'bold'),
-            fg='#333', bg='white'
-        ).pack(pady=(0, 20))
-        
         # 用户名
         tk.Label(
             inner, text='用户名:', 
-            font=('Microsoft YaHei', 11),
+            font=(TK_FONT, 11),
             fg='#555', bg='white', anchor='w'
         ).pack(fill='x', pady=(5, 2))
         
         self.username_entry = tk.Entry(
-            inner, font=('Microsoft YaHei', 11),
+            inner, font=(TK_FONT, 11),
             relief='solid', bd=1, highlightthickness=0
         )
         self.username_entry.pack(fill='x', ipady=5)
@@ -89,12 +75,12 @@ class LoginWindow:
         # 密码
         tk.Label(
             inner, text='密  码:', 
-            font=('Microsoft YaHei', 11),
+            font=(TK_FONT, 11),
             fg='#555', bg='white', anchor='w'
         ).pack(fill='x', pady=(15, 2))
         
         self.password_entry = tk.Entry(
-            inner, font=('Microsoft YaHei', 11),
+            inner, font=(TK_FONT, 11),
             show='●', relief='solid', bd=1, highlightthickness=0
         )
         self.password_entry.pack(fill='x', ipady=5)
@@ -103,7 +89,7 @@ class LoginWindow:
         # 登录按钮
         login_btn = tk.Button(
             inner, text='登  录',
-            font=('Microsoft YaHei', 12, 'bold'),
+            font=(TK_FONT, 12, 'bold'),
             bg='#1a73e8', fg='white',
             activebackground='#1565c0', activeforeground='white',
             relief='flat', cursor='hand2',
@@ -113,9 +99,10 @@ class LoginWindow:
         login_btn.pack(pady=(25, 10))
         
         # 版本信息
+        from config import APP_VERSION
         tk.Label(
-            inner, text='v1.0 — 基于《国家学生体质健康标准（2014修订版）》', 
-            font=('Microsoft YaHei', 8),
+            inner, text=f'v{APP_VERSION} — 基于《国家学生体质健康标准（2014修订版）》', 
+            font=(TK_FONT, 8),
             fg='#999', bg='white'
         ).pack(pady=(10, 0))
     

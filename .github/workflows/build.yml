@@ -1,0 +1,115 @@
+name: 🪟 打包 + Release
+
+on:
+  push:
+    branches: [main, dev]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 打包 EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 设置 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 🔧 系统信息
+        run: |
+          python --version
+          pip list
+
+      - name: 🏗️ 打包主程序 + updater
+        run: |
+          $env:PYTHONIOENCODING='utf-8'
+          python build.py --build
+        working-directory: ${{ github.workspace }}
+
+      - name: Smoke test
+        shell: powershell
+        run: |
+          $exe = Get-ChildItem dist/*.exe | Where-Object { $_.Name -notlike 'updater*' } | Select-Object -First 1
+          Write-Host "Starting $($exe.Name) for smoke test..."
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 6
+          if ($proc.HasExited) {
+            $msg = "EXE exited immediately (exit code: $($proc.ExitCode))"
+            Write-Host $msg
+            throw $msg
+          }
+          Write-Host "Smoke test PASSED"
+          $proc.Kill()
+
+      - name: 🔍 检查打包结果
+        run: |
+          echo "## 🪟 打包结果" >> $env:GITHUB_STEP_SUMMARY
+          $files = Get-ChildItem dist/*.exe
+          foreach ($f in $files) {
+            $size_mb = [math]::Round($f.Length / 1MB, 2)
+            Write-Host "✅ $($f.Name) — ${size_mb} MB"
+            echo "- **$($f.Name):** ${size_mb} MB" >> $env:GITHUB_STEP_SUMMARY
+          }
+          $zip = Get-ChildItem dist/*.zip
+          if ($zip) {
+            $zip_mb = [math]::Round($zip.Length / 1MB, 2)
+            echo "- **Release ZIP:** ${zip_mb} MB" >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: 📤 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-fitness-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: 发布 Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: school-fitness-windows
+          path: release-artifacts
+
+      - name: 📦 压缩 Release 包
+        run: |
+          cd release-artifacts
+          # Rename Chinese-named EXE to ASCII for GitHub Releases
+          for f in *.exe; do
+            case "$f" in
+              *管理系统*) mv "$f" "SchoolFitness.exe" ;;
+            esac
+          done
+          zip -r ../SchoolFitness.zip *.exe
+
+      - name: 🏷️ 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SchoolFitness.zip
+            release-artifacts/SchoolFitness.exe
+            release-artifacts/updater.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

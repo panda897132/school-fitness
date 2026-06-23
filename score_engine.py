@@ -2,7 +2,8 @@
 
 import json
 import os
-from config import DATA_DIR, STANDARDS_FILE, GRADE_LEVELS, CN_TO_NUM
+import re
+from config import DATA_DIR, STANDARDS_FILE
 
 # 加载评分标准
 _standards = None
@@ -31,20 +32,8 @@ def _parse_bmi_range(range_str):
     s = range_str.replace(' ', '')
     
     # Match patterns
-    import re
-    
-    # Pattern: a < x ≤ b  or  a ≤ x ≤ b  etc.
-    m = re.match(r'^([≤<]?)\s*([\d.]+)\s*[<≤]\s*x\s*[<≤]\s*([\d.]+)\s*([≤]?)$', s)
-    if m:
-        lo_sign = m.group(1)
-        lo_val = float(m.group(2))
-        hi_val = float(m.group(3))
-        hi_sign = m.group(4)
-        lo_inclusive = (lo_sign == '≤')
-        hi_inclusive = (hi_sign == '≤')
-        return lo_val, hi_val, lo_inclusive, hi_inclusive
-    
-    # Pattern: ≤value  or  <value
+     
+     # Pattern: ≤value  or  <value
     m = re.match(r'^([≤<])\s*([\d.]+)$', s)
     if m:
         sign = m.group(1)
@@ -72,6 +61,7 @@ def _parse_bmi_range(range_str):
     if m:
         return float(m.group(1)), None, True, True
     
+    # Simple dual-bound patterns first (exact matching)
     # Pattern: a < x < b
     m = re.match(r'^([\d.]+)\s*<\s*x\s*<\s*([\d.]+)$', s)
     if m:
@@ -87,11 +77,30 @@ def _parse_bmi_range(range_str):
     if m:
         return float(m.group(1)), float(m.group(2)), True, False
     
+    # Pattern: a ≤ x ≤ b
+    m = re.match(r'^([\d.]+)\s*≤\s*x\s*≤\s*([\d.]+)$', s)
+    if m:
+        return float(m.group(1)), float(m.group(2)), True, True
+    
+    # Fallback: complex regex for edge cases (e.g., "≤a < x ≤ b")
+    m = re.match(r'^([≤<]?)\s*([\d.]+)\s*[<≤]\s*x\s*[<≤]\s*([\d.]+)\s*([≤]?)$', s)
+    if m:
+        lo_sign = m.group(1)
+        lo_val = float(m.group(2))
+        hi_val = float(m.group(3))
+        hi_sign = m.group(4)
+        lo_inclusive = (lo_sign == '≤')
+        hi_inclusive = (hi_sign == '≤')
+        return lo_val, hi_val, lo_inclusive, hi_inclusive
+    
     return None, None, False, False
 
 
 def _bmi_in_range(bmi_val, lo, hi, lo_inclusive, hi_inclusive):
     """检查BMI值是否在范围内"""
+    # 解析失败时上下界均为 None，应视为不匹配而非匹配
+    if lo is None and hi is None:
+        return False
     if lo is not None:
         if lo_inclusive:
             if bmi_val < lo:
@@ -122,7 +131,7 @@ def calc_bmi_score(height, weight, gender, grade):
         (bmi_value, bmi_grade, bmi_score)
         bmi_grade: '正常'/'低体重'/'超重'/'肥胖'
     """
-    if height is None or weight is None or height <= 0:
+    if height is None or weight is None or height <= 0 or weight <= 0:
         return None, None, 0
     
     height_m = height / 100.0
@@ -138,38 +147,39 @@ def calc_bmi_score(height, weight, gender, grade):
     
     gender_key = 'male_range' if gender == '男' else 'female_range'
     
-    # 查找匹配的BMI范围
+    # 查找匹配的BMI范围（单次遍历，同时记录"正常"范围的边界）
+    normal_lo = normal_hi = None
+    normal_lo_inc = normal_hi_inc = False
+    
     for entry in bmi_list:
         range_str = entry.get(gender_key)
         if range_str is None:
             continue
         lo, hi, lo_inc, hi_inc = _parse_bmi_range(range_str)
+        
         if _bmi_in_range(bmi, lo, hi, lo_inc, hi_inc):
             grade_rank = entry.get('grade_rank', '')
-            bmi_score = entry.get('bmi_score', 0) or 0
+            bmi_score = entry.get('bmi_score')
+            if bmi_score is None or bmi_score == 0:
+                bmi_score = entry.get('score', 0) or 0
             return bmi, grade_rank, bmi_score
-    
-    # 如果没有匹配，检查极端情况
-    # 低体重 (低于正常范围下限)
-    # 肥胖 (高于正常范围上限)
-    for entry in bmi_list:
+        
+        # 记录"正常"范围边界用于溢出判断
         if entry.get('grade_rank') == '正常':
-            range_str = entry.get(gender_key)
-            if range_str:
-                lo, hi, lo_inc, hi_inc = _parse_bmi_range(range_str)
-                if lo is not None and bmi <= lo:
-                    # 低体重
-                    for e in bmi_list:
-                        if e.get('grade_rank') == '低体重':
-                            return bmi, '低体重', e.get('bmi_score', 80)
-                    return bmi, '低体重', 80
-                if hi is not None and bmi >= hi:
-                    # 肥胖
-                    for e in bmi_list:
-                        if e.get('grade_rank') == '肥胖':
-                            return bmi, '肥胖', e.get('bmi_score', 60)
-                    return bmi, '肥胖', 60
-            break
+            normal_lo, normal_hi = lo, hi
+            normal_lo_inc, normal_hi_inc = lo_inc, hi_inc
+    
+    # 没有精确匹配：检查是否超出"正常"范围（低体重/肥胖）
+    if normal_lo is not None and bmi <= normal_lo:
+        for e in bmi_list:
+            if e.get('grade_rank') == '低体重':
+                return bmi, '低体重', e.get('bmi_score', 80)
+        return bmi, '低体重', 80
+    if normal_hi is not None and bmi >= normal_hi:
+        for e in bmi_list:
+            if e.get('grade_rank') == '肥胖':
+                return bmi, '肥胖', e.get('bmi_score', 60)
+        return bmi, '肥胖', 60
     
     return bmi, '正常', 100
 
@@ -185,7 +195,6 @@ def _parse_value(val_str):
     except ValueError:
         pass
     # Try time format like 1'36 → seconds
-    import re
     m = re.match(r"(\d+)'(\d+)", s)
     if m:
         return float(m.group(1)) * 60 + float(m.group(2))
@@ -214,6 +223,19 @@ def calc_item_score(value, gender, grade, item_name):
     """
     if value is None:
         return 0
+    
+    # 折返跑项目：自动检测分.秒格式并转为纯秒数
+    # 如 1.43 → 1分43秒 → 103秒
+    SHUTTLE_MIN_SECONDS = 0.5
+    SHUTTLE_MAX_SECONDS = 10.0
+    if '折返跑' in item_name and isinstance(value, (int, float)) and SHUTTLE_MIN_SECONDS <= value < SHUTTLE_MAX_SECONDS:
+        minutes = int(value)
+        seconds_part = round((value - minutes) * 100)
+        if 0 <= seconds_part < 60:
+            value = minutes * 60 + seconds_part
+    
+    LOWER_IS_BETTER_KEYWORDS = ['50米', '折返跑', '跑']
+    is_running = any(kw in item_name for kw in LOWER_IS_BETTER_KEYWORDS)
     
     item_name = _normalize_item_name(item_name, grade)
     
@@ -247,13 +269,16 @@ def calc_item_score(value, gender, grade, item_name):
     if not parsed:
         return 0
     
-    # Determine direction: check if higher score → higher value or lower value
-    if len(parsed) >= 2:
-        first_val = parsed[0][1]
-        last_val = parsed[-1][1]
-        # For 肺活量/坐位体前屈/跳绳/仰卧起坐: higher value = higher score
-        # For 50米跑/折返跑: lower value = higher score
-        higher_is_better = first_val > last_val
+    # 只有一个标准时直接返回该分数，无需方向判断
+    if len(parsed) == 1:
+        return parsed[0][0]
+    
+    # 语义判断方向：跑步/竞速类项目值越低分数越高
+    higher_is_better = not is_running
+    
+    # 跑步类项目值为0表示未测试，直接返回0分
+    if not higher_is_better and value <= 0:
+        return 0
     
     # Find the matching score
     if higher_is_better:
@@ -307,11 +332,20 @@ def calc_total_score(student_data, grade):
     height = student_data.get('height')
     weight = student_data.get('weight')
     tests = student_data.get('tests', {})
+
+    # 空值保护：缺少关键字段时返回不完整标记
+    if not gender or height is None or weight is None:
+        return {'item_scores': {}, 'total_score': 0, 'total_grade': '数据不完整'}
     
-    result = {'item_scores': {}}
+    result = {'item_scores': {}, 'jump_rope_bonus': 0}
     
-    # Calculate BMI
-    bmi_val, bmi_grade, bmi_score = calc_bmi_score(height, weight, gender, grade)
+    # Calculate BMI (use pre-computed if available from student_data)
+    if 'bmi_score' in student_data and student_data['bmi_score'] is not None:
+        bmi_val = student_data.get('bmi')
+        bmi_grade = student_data.get('bmi_grade', '')
+        bmi_score = student_data['bmi_score']
+    else:
+        bmi_val, bmi_grade, bmi_score = calc_bmi_score(height, weight, gender, grade)
     result['bmi'] = bmi_val
     result['bmi_grade'] = bmi_grade
     result['bmi_score'] = bmi_score
@@ -328,7 +362,15 @@ def calc_total_score(student_data, grade):
         result['item_scores'][item_name] = score
         
         weight = weights.get(item_name, 0)
-        total_weighted += score * weight / 100.0
+        
+        # 一分钟跳绳附加分：超过100分阈值后每多2个加1分，最高20分
+        if item_name == '一分钟跳绳':
+            bonus = calc_jump_rope_bonus(value, gender, grade)
+            result['jump_rope_bonus'] = bonus
+            effective_score = min(score, 100) + bonus  # 有效得分最高120
+            total_weighted += effective_score * weight / 100.0
+        else:
+            total_weighted += score * weight / 100.0
     
     # Add BMI weighted score
     bmi_weight = weights.get('BMI', 15)
@@ -348,3 +390,54 @@ def calc_total_score(student_data, grade):
         result['total_grade'] = '不及格'
     
     return result
+
+
+def get_jump_rope_100_threshold(gender, grade):
+    """获取一分钟跳绳100分对应的次数阈值"""
+    standards = _load_standards()
+    grade_key = str(grade)
+    if grade_key not in standards:
+        return None
+    scoring = standards[grade_key].get('scoring', {})
+    jr = scoring.get('一分钟跳绳', {})
+    gender_key = 'male' if gender == '男' else 'female'
+    return int(jr.get(gender_key, {}).get('100', 0))
+
+
+def calc_jump_rope_bonus(count, gender, grade):
+    """计算一分钟跳绳附加分
+
+    国家学生体质健康标准（2014修订版）：
+    一分钟跳绳为高优指标，学生成绩超过单项评分100分后，
+    每多跳2个加1分，最高加20分。
+
+    Returns:
+        bonus (0-20 整数)
+    """
+    if count is None or count <= 0:
+        return 0
+    threshold = get_jump_rope_100_threshold(gender, grade)
+    if threshold is None or count <= threshold:
+        return 0
+    bonus = int((count - threshold) // 2)
+    return min(bonus, 20)
+
+
+def apply_scores_to_student(student_data, grade):
+    """一站式计算学生全部得分并原地回填到 student_data 字典"""
+    h = student_data.get('height')
+    w = student_data.get('weight')
+    gender = student_data.get('gender', '男')
+    
+    if h is not None and w is not None:
+        student_data['bmi'], student_data['bmi_grade'], student_data['bmi_score'] = \
+            calc_bmi_score(h, w, gender, grade)
+    else:
+        student_data['bmi'], student_data['bmi_grade'], student_data['bmi_score'] = (None, '', 0)
+    
+    result = calc_total_score(student_data, grade)
+    student_data['scores'] = result.get('item_scores', {})
+    student_data['jump_rope_bonus'] = result.get('jump_rope_bonus', 0)
+    student_data['total_score'] = result.get('total_score', 0)
+    student_data['total_grade'] = result.get('total_grade', '')
+    return student_data

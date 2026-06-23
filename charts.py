@@ -1,7 +1,9 @@
 """统计图表 — matplotlib 集成到 Tkinter"""
 
+import warnings
 import matplotlib
 matplotlib.use('TkAgg')
+warnings.filterwarnings('ignore', message='Unable to import Axes3D')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -51,7 +53,17 @@ def _setup_chinese_font():
         return 'sans-serif'
 
 
-_setup_chinese_font()
+_font_initialized = False
+
+
+def _ensure_chinese_font():
+    """按需初始化 matplotlib 中文字体（惰性加载）"""
+    global _font_initialized
+    if _font_initialized:
+        return
+    _setup_chinese_font()
+    _font_initialized = True
+
 
 # 颜色方案
 COLORS = {
@@ -74,6 +86,7 @@ class ChartBuilder:
             stats: list of (className, {优秀: n, 良好: n, 及格: n, 不及格: n})
             title: 图表标题
         """
+        _ensure_chinese_font()
         fig = Figure(figsize=(8, 5), dpi=100)
         ax = fig.add_subplot(111)
         
@@ -104,12 +117,13 @@ class ChartBuilder:
         ax.legend(loc='upper right')
         ax.set_ylim(bottom=0)
         
-        fig.tight_layout()
+        fig.subplots_adjust(bottom=0.18)
         return FigureCanvasTkAgg(fig, master=parent)
     
     @staticmethod
     def create_pie_chart(parent, stats, title="等级占比"):
         """饼图：等级占比"""
+        _ensure_chinese_font()
         fig = Figure(figsize=(6, 5), dpi=100)
         ax = fig.add_subplot(111)
         
@@ -146,12 +160,13 @@ class ChartBuilder:
         return FigureCanvasTkAgg(fig, master=parent)
     
     @staticmethod
-    def create_line_chart(parent, grade_scores, title="各年级平均分趋势"):
-        """折线图：各年级平均分趋势
+    def create_line_chart(parent, grade_scores, title="各年级优良率趋势"):
+        """折线图：各年级优良率趋势
         
         Args:
-            grade_scores: dict {年级名: 平均分}
+            grade_scores: dict {年级名: 优良率(%)}
         """
+        _ensure_chinese_font()
         fig = Figure(figsize=(7, 4.5), dpi=100)
         ax = fig.add_subplot(111)
         
@@ -167,16 +182,16 @@ class ChartBuilder:
         
         # 标注数值
         for i, (g, s) in enumerate(zip(grades, scores)):
-            ax.annotate(f'{s}', (i, s), textcoords="offset points", xytext=(0, 12),
+            ax.annotate(f'{s}%', (i, s), textcoords="offset points", xytext=(0, 12),
                        ha='center', fontsize=10, fontweight='bold')
         
         ax.set_title(title, fontsize=14, fontweight='bold')
-        ax.set_ylabel('平均分')
+        ax.set_ylabel('优良率(%)')
         ax.set_ylim(max(0, min(scores) - 10), min(100, max(scores) + 10))
         ax.grid(True, alpha=0.3)
         ax.set_xlabel('年级')
         
-        fig.tight_layout()
+        fig.subplots_adjust(bottom=0.18)
         return FigureCanvasTkAgg(fig, master=parent)
     
     @staticmethod
@@ -186,8 +201,8 @@ class ChartBuilder:
         Args:
             grade_items_avg: dict {项目名: 平均得分}
         """
+        _ensure_chinese_font()
         import numpy as np
-        
         fig = Figure(figsize=(6, 5), dpi=100)
         ax = fig.add_subplot(111, polar=True)
         

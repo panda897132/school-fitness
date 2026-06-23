@@ -719,36 +719,15 @@ class MainWindow:
         self._update_status('正在检查文件格式...')
         self.window.update()
         
-        # 快速检测文件格式
-        grade_hint = None
-        class_prefix = None
-        try:
-            wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
-            grade_sheet_names = {'一年级', '二年级', '三年级', '四年级', '五年级', '六年级'}
-            has_old_format = any(sn in grade_sheet_names for sn in wb.sheetnames)
-            wb.close()
-            
-            if not has_old_format:
-                # 新格式——弹出对话框让用户指定年级和班级编号
-                grade_str = simpledialog.askstring(
-                    '新格式导入 - 年级',
-                    '检测到新格式Excel文件。\n\n请指定年级 (1-6，留空则自动推断):',
-                    initialvalue=''
-                )
-                if grade_str and grade_str.strip().isdigit():
-                    g = int(grade_str.strip())
-                    if 1 <= g <= 6:
-                        grade_hint = g
-                
-                class_prefix = simpledialog.askstring(
-                    '新格式导入 - 班级编号',
-                    '请输入班级编号 (如501，留空则自动生成):',
-                    initialvalue=f'{grade_hint or 5}01' if grade_hint else ''
-                )
-                if class_prefix:
-                    class_prefix = class_prefix.strip()
-        except Exception:
-            pass  # 检测失败则走自动推断路径
+        # 扫描文件，弹出年级班级选择列表
+        from excel_io import quick_scan_excel, parse_filename_for_import
+        scan = quick_scan_excel(filepath)
+        file_info = parse_filename_for_import(os.path.basename(filepath))
+        
+        grade_hint, class_prefix = self._show_import_scan_dialog(scan, file_info, filepath)
+        if grade_hint is None and class_prefix is None:
+            self._importing = False
+            return
         
         self._update_status('正在导入...')
         
@@ -765,6 +744,145 @@ class MainWindow:
         
         t = threading.Thread(target=do_import, daemon=True)
         t.start()
+    
+    def _show_import_scan_dialog(self, scan, file_info, filepath=''):
+        """弹出年级班级选择列表对话框"""
+        has_old = scan.get('format') == 'old'
+        classes = scan.get('classes', {})
+        
+        result = {'grade': None, 'class_id': None}
+        
+        dialog = tk.Toplevel(self.window)
+        dialog.title('导入 — 选择年级和班级')
+        dialog.geometry('520x400')
+        dialog.transient(self.window)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        
+        frame = tk.Frame(dialog, bg=COLOR_BG_WHITE)
+        frame.pack(fill='both', expand=True, padx=15, pady=15)
+        
+        tk.Label(frame, text=f'文件: {os.path.basename(str(filepath))}', font=FONT_NORMAL_10, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
+        
+        tk.Label(frame, text='检测到的年级和班级:', font=FONT_BOLD_11, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x', pady=(10, 5))
+        
+        # 列表
+        columns = ('grade', 'class_id', 'class_name', 'rows')
+        tree = ttk.Treeview(frame, columns=columns, show='headings', height=8)
+        tree.heading('grade', text='年级')
+        tree.heading('class_id', text='班级编号')
+        tree.heading('class_name', text='班级名称')
+        tree.heading('rows', text='人数')
+        tree.column('grade', width=60, anchor='center')
+        tree.column('class_id', width=100, anchor='center')
+        tree.column('class_name', width=150)
+        tree.column('rows', width=60, anchor='center')
+        
+        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # 从 scan 结果或 file_info 填充列表
+        from config import NUM_TO_CN, GRADE_NAMES
+        has_items = False
+        
+        if has_old:
+            for cid, cinfo in sorted(classes.items()):
+                g = cinfo.get('grade', 1)
+                cn = NUM_TO_CN.get(g, str(g))
+                tree.insert('', 'end', values=(
+                    GRADE_NAMES[g-1] if 1 <= g <= len(GRADE_NAMES) else f'{g}年级',
+                    cid,
+                    f'{cn}班',
+                    cinfo.get('rows', 0)
+                ))
+                has_items = True
+        elif classes:
+            # 新格式：从 file_info 推断
+            fi_grade = file_info.get('grade')
+            fi_cid = file_info.get('class_id')
+            if fi_grade and fi_cid:
+                cn = NUM_TO_CN.get(fi_grade, str(fi_grade))
+                tree.insert('', 'end', values=(
+                    GRADE_NAMES[fi_grade-1] if 1 <= fi_grade <= len(GRADE_NAMES) else f'{fi_grade}年级',
+                    fi_cid,
+                    file_info.get('class_name', f'{cn}班'),
+                    scan.get('total_rows', 0)
+                ))
+                has_items = True
+            else:
+                # 无法推断，显示空行让用户手动输入
+                tree.insert('', 'end', values=('未检测到', '-', '-', ''))
+        
+        if not has_items:
+            tree.insert('', 'end', values=('未检测到', '-', '-', ''))
+        
+        # 选择事件：点击行自动填充下方输入框
+        v_grade = tk.StringVar()
+        v_class_id = tk.StringVar()
+        
+        def on_tree_select(event):
+            sel = tree.selection()
+            if sel:
+                vals = tree.item(sel[0], 'values')
+                if vals[0] and vals[0] not in ('未检测到',):
+                    g_text = vals[0].replace('年级', '')
+                    try:
+                        from config import CN_TO_NUM
+                        g_num = CN_TO_NUM.get(g_text, int(g_text) if g_text.isdigit() else 0)
+                        v_grade.set(str(g_num))
+                    except (ValueError, KeyError):
+                        v_grade.set('')
+                    v_class_id.set(vals[1])
+        
+        tree.bind('<<TreeviewSelect>>', on_tree_select)
+        
+        # 手动输入区域
+        input_frame = tk.Frame(frame, bg=COLOR_BG_WHITE)
+        input_frame.pack(fill='x', pady=(10, 0))
+        
+        tk.Label(input_frame, text='年级:', font=FONT_NORMAL_10, bg=COLOR_BG_WHITE).grid(row=0, column=0, sticky='w', padx=(0, 5))
+        grade_entry = tk.Entry(input_frame, textvariable=v_grade, width=8, font=FONT_NORMAL_10)
+        grade_entry.grid(row=0, column=1, sticky='w')
+        tk.Label(input_frame, text=' (1-6)', font=FONT_SMALL_8, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE).grid(row=0, column=2, sticky='w')
+        
+        tk.Label(input_frame, text='班级编号:', font=FONT_NORMAL_10, bg=COLOR_BG_WHITE).grid(row=1, column=0, sticky='w', padx=(0, 5), pady=(5, 0))
+        cid_entry = tk.Entry(input_frame, textvariable=v_class_id, width=12, font=FONT_NORMAL_10)
+        cid_entry.grid(row=1, column=1, sticky='w', pady=(5, 0))
+        tk.Label(input_frame, text=' (如501)', font=FONT_SMALL_8, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE).grid(row=1, column=2, sticky='w', pady=(5, 0))
+        
+        # 预填从 file_info 推断的值
+        if file_info.get('grade'):
+            v_grade.set(str(file_info['grade']))
+        if file_info.get('class_id'):
+            v_class_id.set(file_info['class_id'])
+        
+        def on_ok():
+            g_str = v_grade.get().strip()
+            c_str = v_class_id.get().strip()
+            if g_str and g_str.isdigit():
+                result['grade'] = int(g_str)
+            if c_str:
+                result['class_id'] = c_str
+            dialog.destroy()
+        
+        def on_cancel():
+            result['grade'] = None
+            result['class_id'] = None
+            dialog.destroy()
+        
+        btn_frame = tk.Frame(frame, bg=COLOR_BG_WHITE)
+        btn_frame.pack(fill='x', pady=(12, 0))
+        
+        tk.Button(btn_frame, text='取消', command=on_cancel, width=10).pack(side='right', padx=(5, 0))
+        tk.Button(btn_frame, text='导入', command=on_ok, width=10, bg=COLOR_PRIMARY, fg='white').pack(side='right')
+        
+        dialog.protocol('WM_DELETE_WINDOW', on_cancel)
+        dialog.wait_window()
+        
+        return result['grade'], result.get('class_id')
     
     def _on_import_done(self, result):
         """导入完成回调（主线程）"""

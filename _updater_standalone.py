@@ -3,14 +3,27 @@
 编译方式: PyInstaller --onefile --noconsole _updater_standalone.py --name updater
 """
 
+import ctypes
 import json
 import os
 import subprocess
 import sys
 import time
 
+# Windows 下用 ctypes 查进程存在，绕过 PyInstaller 中 os.kill 的 C 层异常问题
+_OpenProcess = ctypes.windll.kernel32.OpenProcess if os.name == 'nt' else None
+_SYNCHRONIZE = 0x00100000
+_INVALID_HANDLE_VALUE = 0  # OpenProcess returns NULL (0) on failure
+
 
 def pid_exists(pid):
+    if _OpenProcess is not None:
+        handle = _OpenProcess(_SYNCHRONIZE, False, pid)
+        if handle == _INVALID_HANDLE_VALUE:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    # Linux/macOS 用 os.kill
     try:
         os.kill(pid, 0)
         return True

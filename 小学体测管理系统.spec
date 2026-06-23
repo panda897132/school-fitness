@@ -10,6 +10,7 @@
 
 import os
 import sys
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 # ─── Windows 7 API Set Shim DLL ─────────────────────────────────────
 # Python 3.9+ 静态链接到 api-ms-win-core-path-l1-1-0.dll（Windows 10 API Set）
@@ -30,14 +31,14 @@ else:
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=_WIN_API_SET_SHIM,
+    binaries=_WIN_API_SET_SHIM + collect_dynamic_libs('ssl'),
     datas=[
         ('icon.ico', '.'),
         ('icon.png', '.'),
         ('data/', 'data/'),
         ('用户手册.md', '.'),
     ],
-    hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl', 'numpy', 'utils'],
+    hiddenimports=['tkinter', 'matplotlib.backends.backend_tkagg', 'openpyxl', 'numpy', 'utils', 'ssl', '_ssl', 'certifi'],
     hookspath=[os.path.join(os.getcwd(), 'hooks')],
     hooksconfig={},
     runtime_hooks=[os.path.join(os.getcwd(), 'hooks', 'runtime-ucrt-compat.py')],

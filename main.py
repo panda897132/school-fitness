@@ -73,7 +73,9 @@ def main():
         msg = (
             f"缺少依赖库: {e}\n\n"
             "请先安装依赖:\n"
-            "  pip install openpyxl matplotlib pillow"
+            "  pip install openpyxl matplotlib pillow\n\n"
+            "如果已安装这些库，请检查 Python 环境是否完整:\n"
+            "  python -c \"import ssl; print(ssl.OPENSSL_VERSION)\""
         )
         try:
             msgbox.showerror('依赖缺失', msg)

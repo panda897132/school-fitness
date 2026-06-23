@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -14,6 +13,15 @@ from tkinter import ttk, messagebox
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from config import APP_VERSION, APP_REPO, TK_FONT, FONT_BOLD_11
+
+# SSL 按需导入——_ssl.pyd 在某些机器上可能因 DLL 缺失无法加载，
+# 不影响 app 启动，只是不能检查更新。
+_HAS_SSL = True
+try:
+    import ssl
+except ImportError:
+    _HAS_SSL = False
+    ssl = None
 
 UPDATE_URL = f"https://api.github.com/repos/{APP_REPO}/releases/latest"
 RELEASE_URL = f"https://github.com/{APP_REPO}/releases/latest"
@@ -33,6 +41,8 @@ def _make_ssl_context(verify=True):
     关键问题: Windows 7 默认不启用 TLS 1.2，且系统证书存储可能不含现代 CA。
     verify=False 时跳过证书验证（Win7 全场景兼容）。
     """
+    if not _HAS_SSL:
+        return None
     if verify:
         ctx = ssl.create_default_context()
     else:
@@ -51,8 +61,12 @@ def _urlopen(url, timeout=10):
     """带 SSL 兼容的 urlopen（Windows 7 TLS 1.2 支持）
 
     策略：先验证证书，证书失败则回退到不验证（Win7 证书存储过旧时）。
+    如果系统的 SSL 模块不可用（_ssl.pyd 加载失败），则返回 None。
     """
     import logging as _logging
+    if not _HAS_SSL:
+        return None
+
     req = Request(url, headers={
         "User-Agent": "school-fitness-updater/1.0",
         "Accept": "application/vnd.github.v3+json",
@@ -79,17 +93,24 @@ def check_latest_version():
     """查询 GitHub 最新版本，返回 (tag_name, html_url, asset_name, asset_url, size) 或 None"""
     try:
         resp = _urlopen(UPDATE_URL, timeout=10)
-        data = json.loads(resp.read().decode())
     except HTTPError as e:
         if e.code == 404:
             return None, "未配置更新源（请管理员在 GitHub 创建 Release）"
         return None, f"服务器错误 ({e.code})"
-    except (URLError, json.JSONDecodeError, OSError) as e:
+    except (URLError, OSError) as e:
         raw = str(e)
         if 'CERTIFICATE_VERIFY_FAILED' in raw:
             return None, "SSL 证书验证失败，请检查系统时间或网络环境"
         reason = getattr(e, 'reason', e)
         return None, f"无法连接 ({reason})"
+
+    if resp is None:
+        return None, "SSL 不可用，无法检查更新（系统缺少 SSL 支持库）"
+
+    try:
+        data = json.loads(resp.read().decode())
+    except (json.JSONDecodeError, OSError) as e:
+        return None, f"服务器返回数据格式错误 ({e})"
 
     tag = data.get("tag_name", "")
     if not tag:
@@ -124,6 +145,9 @@ def download_update(url, progress_callback=None):
     tmp.close()
 
     resp = _urlopen(url, timeout=120)
+    if resp is None:
+        raise RuntimeError("SSL 不可用，无法下载更新")
+
     total = int(resp.headers.get("Content-Length", 0))
     downloaded = 0
     chunk_size = 8192

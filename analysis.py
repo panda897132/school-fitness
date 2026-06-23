@@ -342,9 +342,12 @@ def analyze_grade(dm, grade):
     
     # 计算年级中位数/平均分用于排名
     class_rankings = []
+    grade_scores = []
+    grade_obesity = 0
     for ca in class_analyses:
         scores = [s.get('total_score', 0) or 0 for s in ca.get('valid_students', [])]
         avg = round(sum(scores) / len(scores), 1) if scores else 0
+        grade_scores.extend(scores)
         class_rankings.append({
             'class_id': ca['class_id'],
             'class_name': ca['class_name'],
@@ -354,6 +357,7 @@ def analyze_grade(dm, grade):
             'avg_score': avg,
             'obesity_rate': ca['items'][0].get('obesity_rate', 0) if ca['items'] else 0,
         })
+    grade_avg_score = round(sum(grade_scores) / len(grade_scores), 1) if grade_scores else 0
     
     # 按优良率排序
     class_rankings.sort(key=lambda x: x['excellence_rate'], reverse=True)
@@ -376,6 +380,8 @@ def analyze_grade(dm, grade):
             'distribution': grade_dist,
             'effective_total': grade_eff,
             'excellence_rate': safe_rate(total_excellence, grade_eff),
+            'avg_score': grade_avg_score,
+            'obesity_rate': bmi_analysis.get('obesity_rate', 0),
             'male': tg_result['male'],
             'female': tg_result['female'],
         },
@@ -427,6 +433,8 @@ def analyze_school(dm):
     
     valid_students = [s for s in all_students if _is_valid_student(s)]
     total = len(all_students)
+    male_count = sum(1 for s in all_students if s.get('gender') == '男')
+    female_count = sum(1 for s in all_students if s.get('gender') == '女')
     valid_count = len(valid_students)
     invalid_count = total - valid_count
     
@@ -494,6 +502,8 @@ def analyze_school(dm):
     return {
         # 总体
         'total': total,
+        'male_count': male_count,
+        'female_count': female_count,
         'valid_count': valid_count,
         'invalid_count': invalid_count,
         'validity_rate': safe_rate(valid_count, total),
@@ -504,6 +514,8 @@ def analyze_school(dm):
             'distribution': grade_dist,
             'effective_total': grade_eff,
             'excellence_rate': safe_rate(total_excellence, grade_eff),
+            'avg_score': round(sum(s.get('total_score', 0) or 0 for s in valid_students) / grade_eff, 1) if grade_eff else 0,
+            'obesity_rate': school_bmi.get('obesity_rate', 0),
             'male': tg_result['male'],
             'female': tg_result['female'],
         },

@@ -578,14 +578,23 @@ class DataManager:
         if class_id:
             cdata = all_classes.get(str(class_id))
             if cdata:
-                students = self._get_round_students(cdata)
+                for s in self._get_round_students(cdata):
+                    s_copy = dict(s)
+                    s_copy['class_id'] = str(class_id)
+                    students.append(s_copy)
         elif grade:
             for cid, cdata in all_classes.items():
                 if cdata.get('grade') == grade:
-                    students.extend(self._get_round_students(cdata))
+                    for s in self._get_round_students(cdata):
+                        s_copy = dict(s)
+                        s_copy['class_id'] = cid
+                        students.append(s_copy)
         else:
             for cid, cdata in all_classes.items():
-                students.extend(self._get_round_students(cdata))
+                for s in self._get_round_students(cdata):
+                    s_copy = dict(s)
+                    s_copy['class_id'] = cid
+                    students.append(s_copy)
         return students
     
     def get_statistics(self, grade=None, class_id=None):

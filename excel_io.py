@@ -800,7 +800,9 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                     pct = f"{round(count / tg['effective_total'] * 100, 1)}%" if tg['effective_total'] > 0 else '0%'
                     _style_row(ws_analysis, r, 3, [grade_label, str(count), pct])
                     r += 1
-                _style_row(ws_analysis, r, 3, ['🏆 优良率', '',
+                excellence_count = sum(tg['distribution'].get(k, 0) for k in ('优秀', '良好'))
+                _style_row(ws_analysis, r, 3, ['🏆 优良率',
+                    str(excellence_count),
                     f"{tg.get('excellence_rate', 0)}%"], bold_first=True)
                 r += 2
             
@@ -816,7 +818,7 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                         ['项目', '正常', '超重', '低体重', '肥胖', '有效总数', '肥胖率'])
                 else:
                     _style_header(ws_analysis, r, 10,
-                        ['项目', '优秀', '良好', '及格', '不及格', '有效总数', '优良率'])
+                        ['项目', '优秀', '良好', '及格', '不及格', '有效总数', '优良人数', '优良率'])
                 r += 1
                 
                 for item in items:
@@ -834,17 +836,42 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                             f"{item.get('obesity_rate', 0)}%"
                         ]
                     else:
+                        excellent = dist.get('优秀', 0)
+                        good = dist.get('良好', 0)
                         row_vals = [
                             item['item_name'],
-                            str(dist.get('优秀', 0)),
-                            str(dist.get('良好', 0)),
+                            str(excellent),
+                            str(good),
                             str(dist.get('及格', 0)),
                             str(dist.get('不及格', 0)),
                             str(eff),
+                            str(excellent + good),
                             f"{item.get('excellence_rate', 0)}%"
                         ]
-                    _style_row(ws_analysis, r, 7, row_vals, bold_first=True)
+                    _style_row(ws_analysis, r, 8, row_vals, bold_first=True)
                     r += 1
+            
+            # 各年级概况（全校范围）
+            if scope == '全校':
+                grade_summaries = analysis_data.get('grade_summaries', [])
+                if grade_summaries:
+                    r += 1
+                    ws_analysis.cell(row=r, column=1, value='各年级概况').font = subtitle_font
+                    r += 1
+                    _style_header(ws_analysis, r, 10, ['年级', '人数', '优良人数', '优良率', '平均分', '肥胖率'])
+                    r += 1
+                    for gs in grade_summaries:
+                        tg_dist = gs.get('total_grade', {}).get('distribution', {})
+                        ec = tg_dist.get('优秀', 0) + tg_dist.get('良好', 0)
+                        _style_row(ws_analysis, r, 6, [
+                            gs.get('grade_name', ''),
+                            str(gs.get('total', 0)),
+                            str(ec),
+                            f"{gs.get('total_grade', {}).get('excellence_rate', 0)}%",
+                            str(gs.get('total_grade', {}).get('avg_score', '')),
+                            f"{gs.get('total_grade', {}).get('obesity_rate', 0)}%"
+                        ])
+                        r += 1
             
             # 班级排名 (仅年级/全校)
             rankings = analysis_data.get('class_rankings', [])
@@ -927,7 +954,7 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                     for item in ca.get('items', []):
                         all_grade_items.add(item['item_name'])
                 
-                headers_cls = ['班级', '人数', '男', '女', '有效', '优良率']
+                headers_cls = ['班级', '人数', '男', '女', '有效', '优良人数', '优良率']
                 for item_name in sorted(all_grade_items):
                     if item_name != 'BMI':
                         headers_cls.append(f'{item_name}优良率')
@@ -937,10 +964,13 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                 
                 row = 3
                 for ca in class_analyses:
+                    tg_dist = ca.get('total_grade', {}).get('distribution', {})
+                    excellence_count = tg_dist.get('优秀', 0) + tg_dist.get('良好', 0)
                     vals = [
                         ca['class_name'], str(ca['total']),
                         str(ca.get('male_count', 0)), str(ca.get('female_count', 0)),
                         str(ca['valid_count']),
+                        str(excellence_count),
                         f"{ca['total_grade'].get('excellence_rate', 0)}%"
                     ]
                     

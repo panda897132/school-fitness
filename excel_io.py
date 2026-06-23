@@ -312,7 +312,8 @@ def import_from_excel(filepath, grade_hint=None, class_prefix=None):
 
 
 def _detect_new_format_header(ws):
-    """检测新格式表头行（含'姓名'和'总成绩'），返回行号或None"""
+    """检测新格式表头行（含'姓名'和'总成绩'/'总分'等），返回行号或None"""
+    total_keywords = ('总成绩', '总分', '总评', '总得分', '综合得分', '总计')
     for row in range(1, min(ws.max_row + 1, 5)):
         has_name = False
         has_total_score = False
@@ -320,7 +321,7 @@ def _detect_new_format_header(ws):
             val = _normalize_header(str(ws.cell(row=row, column=col).value or '').strip())
             if '姓名' in val:
                 has_name = True
-            if '总成绩' in val:
+            if any(kw in val for kw in total_keywords):
                 has_total_score = True
         if has_name and has_total_score:
             return row
@@ -342,7 +343,7 @@ def _import_new_format(ws, header_row, grade_hint, class_prefix):
         hdr = _normalize_header(str(ws.cell(row=header_row, column=col).value or '').strip())
         if hdr == 'BMI':
             continue
-        if '成绩' in hdr or '得分' in hdr or '分数' in hdr or hdr == '总成绩':
+        if '成绩' in hdr or '得分' in hdr or '分数' in hdr or any(kw in hdr for kw in ('总分', '总评', '总计')):
             continue
         if '姓名' in hdr:
             col_map['name'] = col

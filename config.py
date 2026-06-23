@@ -1,6 +1,6 @@
 """常量配置 — 诸葛镇中心小学学生体质健康管理系统"""
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.9"
 APP_REPO = "panda897132/school-fitness"
 
 SCHOOL_NAME = "诸葛镇中心小学"

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 0, 9, 0),
+    prodvers=(1, 0, 9, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -15,11 +15,11 @@ VSVersionInfo(
       StringTable('080404b0', [
         StringStruct('CompanyName', '诸葛镇中心小学'),
         StringStruct('FileDescription', '学生体质健康管理系统'),
-        StringStruct('FileVersion', '1.0.0'),
+        StringStruct('FileVersion', '1.0.9'),
         StringStruct('InternalName', '小学体测管理系统'),
         StringStruct('OriginalFilename', '小学体测管理系统.exe'),
         StringStruct('ProductName', '小学体测管理系统'),
-        StringStruct('ProductVersion', '1.0.0')
+        StringStruct('ProductVersion', '1.0.9')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [0x0804, 0x04b0])])

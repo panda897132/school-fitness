@@ -1543,7 +1543,7 @@ class MainWindow:
         dialog.bind('<Escape>', lambda e: dialog.destroy())
         
         dialog.update_idletasks()
-        dialog.geometry(f'{max(360, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight()}')
+        dialog.geometry(f'{max(420, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight()}')
         center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight())
     
     def _delete_class(self):

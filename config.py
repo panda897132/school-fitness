@@ -1,6 +1,25 @@
 """常量配置 — 诸葛镇中心小学学生体质健康管理系统"""
 
-APP_VERSION = "1.0.11"
+import os
+import subprocess
+import sys
+
+_APP_VERSION = "1.0.11"
+
+# 源码运行时自动从 git tag 获取版本号（打包时 CI 会改写此文件）
+if not getattr(sys, 'frozen', False):
+    try:
+        _tag = subprocess.run(
+            ['git', 'describe', '--tags', '--abbrev=0'],
+            capture_output=True, text=True, timeout=2,
+            cwd=os.path.dirname(__file__)
+        ).stdout.strip()
+        if _tag.startswith('v'):
+            _APP_VERSION = _tag[1:]
+    except Exception:
+        pass
+
+APP_VERSION = _APP_VERSION
 APP_REPO = "panda897132/school-fitness"
 
 SCHOOL_NAME = "诸葛镇中心小学"

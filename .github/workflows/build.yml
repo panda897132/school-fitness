@@ -31,7 +31,7 @@ jobs:
           Write-Host "Injecting version: $ver"
           # config.py
           $cfg = Get-Content config.py -Raw
-          $cfg = $cfg -replace 'APP_VERSION = "[\d.]+"', "APP_VERSION = `"$ver`""
+          $cfg = $cfg -replace '_APP_VERSION = "[\d.]+"', "_APP_VERSION = `"$ver`""
           Set-Content config.py -Value $cfg -Encoding utf8
           # version_info.txt
           $verDot = $ver -replace '\.', ', '
@@ -44,7 +44,7 @@ jobs:
           $info = $info -replace "ProductVersion', '[\d.]+'", "ProductVersion', '$ver'"
           Set-Content version_info.txt -Value $info -Encoding utf8
           Write-Host "config.py:"
-          Select-String 'APP_VERSION' config.py
+          Select-String '_APP_VERSION' config.py
           Write-Host "version_info.txt:"
           Select-String 'filevers|prodvers|FileVersion|ProductVersion' version_info.txt
 

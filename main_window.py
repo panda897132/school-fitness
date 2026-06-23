@@ -2085,7 +2085,6 @@ class MainWindow:
     
     def _show_changelog(self):
         from tkinter import scrolledtext as _st
-        from urllib.request import urlopen, Request
         import json as _json
 
         dialog = tk.Toplevel(self.window)
@@ -2101,12 +2100,14 @@ class MainWindow:
         dialog.update()
 
         try:
+            from updater import _urlopen
             # 获取最新 Release
-            req = Request(
+            resp = _urlopen(
                 f'https://api.github.com/repos/{APP_REPO}/releases/latest',
-                headers={"User-Agent": "school-fitness/1.0"}
+                timeout=10
             )
-            resp = urlopen(req, timeout=10)
+            if resp is None:
+                raise RuntimeError('SSL 不可用，无法加载更新日志')
             latest = _json.loads(resp.read().decode())
             latest_tag = latest.get('tag_name', '')
             published = latest.get('published_at', '')[:10]
@@ -2122,16 +2123,16 @@ class MainWindow:
                 text.insert('end', f'{cur_tag} → {latest_tag}  ({published})\n\n', 'tag')
                 # 获取版本间的提交记录
                 try:
-                    req2 = Request(
+                    resp2 = _urlopen(
                         f'https://api.github.com/repos/{APP_REPO}/compare/{cur_tag}...{latest_tag}',
-                        headers={"User-Agent": "school-fitness/1.0"}
+                        timeout=10
                     )
-                    resp2 = urlopen(req2, timeout=10)
-                    diff = _json.loads(resp2.read().decode())
-                    text.insert('end', f'共 {diff.get("total_commits", 0)} 次提交:\n\n')
-                    for c in diff.get('commits', []):
-                        msg = c.get('commit', {}).get('message', '').split('\n')[0]
-                        text.insert('end', f'  • {msg}\n')
+                    if resp2:
+                        diff = _json.loads(resp2.read().decode())
+                        text.insert('end', f'共 {diff.get("total_commits", 0)} 次提交:\n\n')
+                        for c in diff.get('commits', []):
+                            msg = c.get('commit', {}).get('message', '').split('\n')[0]
+                            text.insert('end', f'  • {msg}\n')
                 except Exception:
                     text.insert('end', '(无法加载提交详情)\n')
                 text.insert('end', '\n')

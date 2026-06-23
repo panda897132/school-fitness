@@ -1,10 +1,11 @@
 """常量配置 — 诸葛镇中心小学学生体质健康管理系统"""
 
 import os
+import platform
 import subprocess
 import sys
 
-_APP_VERSION = "1.0.11"
+_APP_VERSION = "1.0.12"
 
 # 源码运行时自动从 git tag 获取版本号（打包时 CI 会改写此文件）
 if not getattr(sys, 'frozen', False):
@@ -125,8 +126,14 @@ STUDENT_COLUMNS = [
     ("等级", 60),
 ]
 
-# Tkinter 字体（优先使用系统可用中文字体，避免硬编码 Windows 字体）
-TK_FONT = 'Noto Sans CJK JP'
+# Tkinter 字体（按平台自动选择合适的中文字体）
+_system = platform.system()
+if _system == 'Windows':
+    TK_FONT = 'Microsoft YaHei'
+elif _system == 'Darwin':
+    TK_FONT = 'PingFang SC'
+else:
+    TK_FONT = 'Noto Sans CJK JP'
 
 # 字体预设（依赖 TK_FONT）
 FONT_BOLD_14 = (TK_FONT, 14, 'bold')

@@ -747,81 +747,137 @@ class MainWindow:
     
     def _show_import_scan_dialog(self, scan, file_info, filepath=''):
         """弹出年级班级选择列表对话框"""
+        import tkinter.font as _tkfont
         has_old = scan.get('format') == 'old'
         classes = scan.get('classes', {})
+        fmt_label = '旧格式（按年级分Sheet）' if has_old else '新格式（单表）'
         
         result = {'grade': None, 'class_id': None}
         
         dialog = tk.Toplevel(self.window)
         dialog.title('导入 — 选择年级和班级')
-        dialog.geometry('520x400')
         dialog.transient(self.window)
         dialog.grab_set()
         dialog.resizable(False, False)
         
-        frame = tk.Frame(dialog, bg=COLOR_BG_WHITE)
-        frame.pack(fill='both', expand=True, padx=15, pady=15)
+        # 自适应宽度：根据文件名长度
+        fname = os.path.basename(str(filepath))
+        win_w = max(540, min(700, len(fname) * 9 + 300))
         
-        tk.Label(frame, text=f'文件: {os.path.basename(str(filepath))}', font=FONT_NORMAL_10, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
+        v_grade = tk.StringVar()
+        v_class_id = tk.StringVar()
+        v_class_name = tk.StringVar()
         
-        tk.Label(frame, text='检测到的年级和班级:', font=FONT_BOLD_11, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x', pady=(10, 5))
+        # ─── 顶部标题区 ───
+        header = tk.Frame(dialog, bg=COLOR_PRIMARY, height=50)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        tk.Label(header, text='导入Excel数据', font=(TK_FONT, 14, 'bold'),
+                 fg='white', bg=COLOR_PRIMARY).pack(expand=True)
         
-        # 列表
+        # ─── 主内容区 ───
+        main = tk.Frame(dialog, bg=COLOR_BG_WHITE)
+        main.pack(fill='both', expand=True, padx=18, pady=(12, 10))
+        
+        # 文件信息 + 格式标签
+        info_bar = tk.Frame(main, bg=COLOR_BG_WHITE)
+        info_bar.pack(fill='x')
+        tk.Label(info_bar, text=fname, font=FONT_BOLD_11,
+                 fg='#333', bg=COLOR_BG_WHITE, anchor='w').pack(side='left')
+        tk.Label(info_bar, text=fmt_label, font=FONT_SMALL_8,
+                 fg=COLOR_TEXT_LIGHT, bg='#e8e8e8', padx=6, pady=2).pack(side='right')
+        
+        # 分隔线
+        tk.Frame(main, height=1, bg='#ddd').pack(fill='x', pady=(8, 10))
+        
+        # 列表标题
+        tk.Label(main, text='检测到的年级和班级:', font=FONT_BOLD_11,
+                 bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
+        
+        # ─── Treeview 列表 ───
         columns = ('grade', 'class_id', 'class_name', 'rows')
-        tree = ttk.Treeview(frame, columns=columns, show='headings', height=8)
+        tree_frame = tk.Frame(main, bg=COLOR_BG_WHITE)
+        tree_frame.pack(fill='both', expand=True, pady=(6, 0))
+        
+        tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=7)
         tree.heading('grade', text='年级')
         tree.heading('class_id', text='班级编号')
         tree.heading('class_name', text='班级名称')
         tree.heading('rows', text='人数')
-        tree.column('grade', width=60, anchor='center')
+        tree.column('grade', width=80, anchor='center')
         tree.column('class_id', width=100, anchor='center')
-        tree.column('class_name', width=150)
-        tree.column('rows', width=60, anchor='center')
+        tree.column('class_name', width=160)
+        tree.column('rows', width=70, anchor='center')
         
-        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        # 设置行高
+        style = ttk.Style()
+        style.configure('Import.Treeview', rowheight=26, font=(TK_FONT, 10))
+        style.configure('Import.Treeview.Heading', font=(TK_FONT, 10, 'bold'))
+        tree.configure(style='Import.Treeview')
+        
+        scrollbar = ttk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
-        
         tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         
-        # 从 scan 结果或 file_info 填充列表
-        from config import NUM_TO_CN, GRADE_NAMES
+        # 填充数据
+        from config import NUM_TO_CN, GRADE_NAMES, CN_TO_NUM
         has_items = False
+        
+        def add_row(g_idx, cid, cname, rows):
+            tag = 'even' if len(tree.get_children()) % 2 == 0 else 'odd'
+            tree.insert('', 'end', values=(g_idx, cid, cname, rows), tags=(tag,))
+        
+        tree.tag_configure('even', background='#f9f9f9')
+        tree.tag_configure('odd', background='white')
         
         if has_old:
             for cid, cinfo in sorted(classes.items()):
                 g = cinfo.get('grade', 1)
                 cn = NUM_TO_CN.get(g, str(g))
-                tree.insert('', 'end', values=(
+                add_row(
                     GRADE_NAMES[g-1] if 1 <= g <= len(GRADE_NAMES) else f'{g}年级',
                     cid,
                     f'{cn}班',
                     cinfo.get('rows', 0)
-                ))
+                )
                 has_items = True
         elif classes:
-            # 新格式：从 file_info 推断
             fi_grade = file_info.get('grade')
             fi_cid = file_info.get('class_id')
             if fi_grade and fi_cid:
                 cn = NUM_TO_CN.get(fi_grade, str(fi_grade))
-                tree.insert('', 'end', values=(
+                add_row(
                     GRADE_NAMES[fi_grade-1] if 1 <= fi_grade <= len(GRADE_NAMES) else f'{fi_grade}年级',
                     fi_cid,
                     file_info.get('class_name', f'{cn}班'),
                     scan.get('total_rows', 0)
-                ))
+                )
                 has_items = True
-            else:
-                # 无法推断，显示空行让用户手动输入
-                tree.insert('', 'end', values=('未检测到', '-', '-', ''))
+                # 预填
+                v_grade.set(str(fi_grade))
+                v_class_id.set(fi_cid)
+                v_class_name.set(file_info.get('class_name', f'{cn}班'))
         
         if not has_items:
             tree.insert('', 'end', values=('未检测到', '-', '-', ''))
         
-        # 选择事件：点击行自动填充下方输入框
-        v_grade = tk.StringVar()
-        v_class_id = tk.StringVar()
+        # 选中第一行
+        if tree.get_children():
+            tree.selection_set(tree.get_children()[0])
+            tree.focus(tree.get_children()[0])
+            # 触发一次选中事件
+            sel = tree.get_children()[0]
+            vals = tree.item(sel, 'values')
+            if vals[0] and vals[0] not in ('未检测到',):
+                g_text = vals[0].replace('年级', '')
+                try:
+                    g_num = CN_TO_NUM.get(g_text, int(g_text) if g_text.isdigit() else 0)
+                    v_grade.set(str(g_num))
+                except (ValueError, KeyError):
+                    v_grade.set('')
+                v_class_id.set(vals[1])
+                v_class_name.set(vals[2])
         
         def on_tree_select(event):
             sel = tree.selection()
@@ -830,42 +886,53 @@ class MainWindow:
                 if vals[0] and vals[0] not in ('未检测到',):
                     g_text = vals[0].replace('年级', '')
                     try:
-                        from config import CN_TO_NUM
                         g_num = CN_TO_NUM.get(g_text, int(g_text) if g_text.isdigit() else 0)
                         v_grade.set(str(g_num))
                     except (ValueError, KeyError):
                         v_grade.set('')
                     v_class_id.set(vals[1])
+                    v_class_name.set(vals[2])
         
         tree.bind('<<TreeviewSelect>>', on_tree_select)
+        tree.bind('<Double-1>', lambda e: on_ok())
         
-        # 手动输入区域
-        input_frame = tk.Frame(frame, bg=COLOR_BG_WHITE)
-        input_frame.pack(fill='x', pady=(10, 0))
+        # ─── 输入区 ───
+        input_frame = tk.Frame(main, bg='#f5f7fa', bd=1, relief='solid', highlightbackground='#ddd', highlightthickness=1)
+        input_frame.pack(fill='x', pady=(10, 0), ipady=4)
         
-        tk.Label(input_frame, text='年级:', font=FONT_NORMAL_10, bg=COLOR_BG_WHITE).grid(row=0, column=0, sticky='w', padx=(0, 5))
-        grade_entry = tk.Entry(input_frame, textvariable=v_grade, width=8, font=FONT_NORMAL_10)
-        grade_entry.grid(row=0, column=1, sticky='w')
-        tk.Label(input_frame, text=' (1-6)', font=FONT_SMALL_8, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE).grid(row=0, column=2, sticky='w')
+        tk.Label(input_frame, text='导入到:', font=FONT_BOLD_10,
+                 fg='#555', bg='#f5f7fa').grid(row=0, column=0, padx=(10, 5), pady=(8, 2), sticky='w')
         
-        tk.Label(input_frame, text='班级编号:', font=FONT_NORMAL_10, bg=COLOR_BG_WHITE).grid(row=1, column=0, sticky='w', padx=(0, 5), pady=(5, 0))
-        cid_entry = tk.Entry(input_frame, textvariable=v_class_id, width=12, font=FONT_NORMAL_10)
-        cid_entry.grid(row=1, column=1, sticky='w', pady=(5, 0))
-        tk.Label(input_frame, text=' (如501)', font=FONT_SMALL_8, fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE).grid(row=1, column=2, sticky='w', pady=(5, 0))
+        tk.Label(input_frame, text='年级', font=FONT_NORMAL_9,
+                 fg=COLOR_TEXT_MUTED, bg='#f5f7fa').grid(row=1, column=0, padx=(10, 2), pady=(0, 8), sticky='w')
+        g_entry = tk.Entry(input_frame, textvariable=v_grade, width=6, font=(TK_FONT, 11), bd=1, relief='solid')
+        g_entry.grid(row=1, column=1, padx=(0, 5), pady=(0, 8), sticky='w')
+        tk.Label(input_frame, text='(1-6)', font=FONT_SMALL_8,
+                 fg=COLOR_TEXT_LIGHT, bg='#f5f7fa').grid(row=1, column=2, padx=(0, 15), pady=(0, 8), sticky='w')
         
-        # 预填从 file_info 推断的值
-        if file_info.get('grade'):
-            v_grade.set(str(file_info['grade']))
-        if file_info.get('class_id'):
-            v_class_id.set(file_info['class_id'])
+        tk.Label(input_frame, text='班级编号', font=FONT_NORMAL_9,
+                 fg=COLOR_TEXT_MUTED, bg='#f5f7fa').grid(row=1, column=3, padx=(5, 2), pady=(0, 8), sticky='w')
+        c_entry = tk.Entry(input_frame, textvariable=v_class_id, width=10, font=(TK_FONT, 11), bd=1, relief='solid')
+        c_entry.grid(row=1, column=4, padx=(0, 5), pady=(0, 8), sticky='w')
+        tk.Label(input_frame, text='(如501)', font=FONT_SMALL_8,
+                 fg=COLOR_TEXT_LIGHT, bg='#f5f7fa').grid(row=1, column=5, padx=(0, 10), pady=(0, 8), sticky='w')
+        
+        # ─── 操作按钮 ───
+        btn_bar = tk.Frame(main, bg=COLOR_BG_WHITE)
+        btn_bar.pack(fill='x', pady=(12, 0))
         
         def on_ok():
             g_str = v_grade.get().strip()
             c_str = v_class_id.get().strip()
+            if not c_str:
+                messagebox.showwarning('提示', '请输入班级编号', parent=dialog)
+                c_entry.focus_set()
+                return
             if g_str and g_str.isdigit():
                 result['grade'] = int(g_str)
-            if c_str:
-                result['class_id'] = c_str
+            else:
+                result['grade'] = None
+            result['class_id'] = c_str
             dialog.destroy()
         
         def on_cancel():
@@ -873,13 +940,34 @@ class MainWindow:
             result['class_id'] = None
             dialog.destroy()
         
-        btn_frame = tk.Frame(frame, bg=COLOR_BG_WHITE)
-        btn_frame.pack(fill='x', pady=(12, 0))
+        # 按钮容器（右对齐）
+        btn_right = tk.Frame(btn_bar, bg=COLOR_BG_WHITE)
+        btn_right.pack(side='right')
         
-        tk.Button(btn_frame, text='取消', command=on_cancel, width=10).pack(side='right', padx=(5, 0))
-        tk.Button(btn_frame, text='导入', command=on_ok, width=10, bg=COLOR_PRIMARY, fg='white').pack(side='right')
+        tk.Button(btn_right, text='取消', command=on_cancel, width=8,
+                 font=(TK_FONT, 10), relief='flat', bd=1,
+                 bg='#f0f0f0', activebackground='#e0e0e0').pack(side='left', padx=(0, 8))
+        
+        import_btn = tk.Button(btn_right, text='开 始 导 入', command=on_ok, width=12,
+                              font=(TK_FONT, 11, 'bold'), relief='flat',
+                              bg=COLOR_PRIMARY, fg='white',
+                              activebackground=COLOR_PRIMARY_DARK, activeforeground='white',
+                              cursor='hand2')
+        import_btn.pack(side='left')
+        
+        # 快捷键
+        dialog.bind('<Return>', lambda e: on_ok())
+        dialog.bind('<Escape>', lambda e: on_cancel())
         
         dialog.protocol('WM_DELETE_WINDOW', on_cancel)
+        
+        # 窗口自适应内容
+        dialog.update_idletasks()
+        dialog.geometry(f'{win_w}x{max(420, dialog.winfo_reqheight())}')
+        # 居中
+        from utils import center_window
+        center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight())
+        
         dialog.wait_window()
         
         return result['grade'], result.get('class_id')

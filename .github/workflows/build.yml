@@ -29,15 +29,15 @@ jobs:
         run: |
           $ver = "${{ github.ref_name }}" -replace '^v', ''
           Write-Host "Injecting version: $ver"
-          # config.py
-          $cfg = Get-Content config.py -Raw
+          # config.py（必须加 -Encoding utf8，PowerShell 5.1 默认用 ANSI 会损坏中文）
+          $cfg = Get-Content config.py -Raw -Encoding utf8
           $cfg = $cfg -replace '_APP_VERSION = "[\d.]+"', "_APP_VERSION = `"$ver`""
           Set-Content config.py -Value $cfg -Encoding utf8
           # version_info.txt
           $verDot = $ver -replace '\.', ', '
           $verCsv = ($ver -split '\.' | ForEach-Object { "$_, " }) -join ''
           $verCsv = ($ver -split '\.' | ForEach-Object { [int]$_ }) -join ', '
-          $info = Get-Content version_info.txt -Raw
+          $info = Get-Content version_info.txt -Raw -Encoding utf8
           $info = $info -replace 'filevers=\([\d, ]+\)', "filevers=($verCsv, 0)"
           $info = $info -replace 'prodvers=\([\d, ]+\)', "prodvers=($verCsv, 0)"
           $info = $info -replace "FileVersion', '[\d.]+'", "FileVersion', '$ver'"

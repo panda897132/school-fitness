@@ -23,6 +23,31 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
+      - name: 🔖 改写版本号（从 Git Tag 注入）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $ver = "${{ github.ref_name }}" -replace '^v', ''
+          Write-Host "Injecting version: $ver"
+          # config.py
+          $cfg = Get-Content config.py -Raw
+          $cfg = $cfg -replace 'APP_VERSION = "[\d.]+"', "APP_VERSION = `"$ver`""
+          Set-Content config.py -Value $cfg -Encoding utf8
+          # version_info.txt
+          $verDot = $ver -replace '\.', ', '
+          $verCsv = ($ver -split '\.' | ForEach-Object { "$_, " }) -join ''
+          $verCsv = ($ver -split '\.' | ForEach-Object { [int]$_ }) -join ', '
+          $info = Get-Content version_info.txt -Raw
+          $info = $info -replace 'filevers=\([\d, ]+\)', "filevers=($verCsv, 0)"
+          $info = $info -replace 'prodvers=\([\d, ]+\)', "prodvers=($verCsv, 0)"
+          $info = $info -replace "FileVersion', '[\d.]+'", "FileVersion', '$ver'"
+          $info = $info -replace "ProductVersion', '[\d.]+'", "ProductVersion', '$ver'"
+          Set-Content version_info.txt -Value $info -Encoding utf8
+          Write-Host "config.py:"
+          Select-String 'APP_VERSION' config.py
+          Write-Host "version_info.txt:"
+          Select-String 'filevers|prodvers|FileVersion|ProductVersion' version_info.txt
+
       - name: 📦 安装依赖
         run: |
           python -m pip install --upgrade pip

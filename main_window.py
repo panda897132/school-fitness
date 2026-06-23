@@ -1423,60 +1423,82 @@ class MainWindow:
         
         dialog = tk.Toplevel(self.window)
         dialog.title('添加班级')
-        dialog.geometry('340x310')
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
-        center_window(dialog, 340, 310)
         self._add_class_dialog = dialog
         dialog.protocol('WM_DELETE_WINDOW', lambda: (setattr(self, '_add_class_dialog', None), dialog.destroy()))
         dialog.bind('<Destroy>', lambda e: setattr(self, '_add_class_dialog', None))
         
-        frame = tk.Frame(dialog, bg=COLOR_BG_WHITE)
-        frame.pack(fill='both', expand=True, padx=20, pady=10)
-        
-        # 年级行
-        grade_row = tk.Frame(frame, bg=COLOR_BG_WHITE)
-        grade_row.pack(fill='x', pady=(0, 8))
-        tk.Label(grade_row, text='年级：', font=(TK_FONT, 11), bg=COLOR_BG_WHITE, width=8, anchor='w').pack(side='left')
         default_grade = default_grade_name or GRADE_NAMES[0]
         grade_var = tk.StringVar(value=default_grade)
-        grade_combo = ttk.Combobox(grade_row, textvariable=grade_var, values=GRADE_NAMES, state='readonly', width=18, font=(TK_FONT, 11))
+        
+        # ─── 顶部标题栏 ───
+        header = tk.Frame(dialog, bg=COLOR_ACCENT, height=44)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        tk.Label(header, text='✚ 添加新班级', font=(TK_FONT, 14, 'bold'),
+                 fg='white', bg=COLOR_ACCENT).pack(expand=True)
+        
+        # ─── 主内容区 ───
+        main = tk.Frame(dialog, bg=COLOR_BG_WHITE, padx=24, pady=18)
+        main.pack(fill='both', expand=True)
+        
+        # 年级选择
+        tk.Label(main, text='所属年级', font=(TK_FONT, 10),
+                 fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
+        grade_combo = ttk.Combobox(main, textvariable=grade_var, values=GRADE_NAMES,
+                                    state='readonly', font=(TK_FONT, 12), height=8)
         if default_grade_name and default_grade_name in GRADE_NAMES:
             grade_combo.current(GRADE_NAMES.index(default_grade_name))
         else:
             grade_combo.current(0)
-        grade_combo.pack(side='left', fill='x', expand=True)
+        grade_combo.pack(fill='x', pady=(3, 16))
         
-        # 班级编号行
-        id_row = tk.Frame(frame, bg=COLOR_BG_WHITE)
-        id_row.pack(fill='x', pady=(0, 4))
-        tk.Label(id_row, text='班级编号：', font=(TK_FONT, 11), bg=COLOR_BG_WHITE, width=8, anchor='w').pack(side='left')
-        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 11), width=18)
-        class_id_entry.pack(side='left', fill='x', expand=True, ipady=3)
+        # 班级编号
+        tk.Label(main, text='班级编号', font=(TK_FONT, 10),
+                 fg=COLOR_TEXT_MUTED, bg=COLOR_BG_WHITE, anchor='w').pack(fill='x')
+        id_row = tk.Frame(main, bg=COLOR_BG_WHITE)
+        id_row.pack(fill='x', pady=(3, 2))
+        class_id_entry = tk.Entry(id_row, font=(TK_FONT, 12), bd=1, relief='solid',
+                                  highlightthickness=0)
+        class_id_entry.pack(side='left', fill='x', expand=True, ipady=4)
         class_id_entry.bind('<Return>', lambda e: do_add())
+        tk.Label(main, text='例: 101 = 一(1)班, 502 = 五(2)班', font=(TK_FONT, 8),
+                 fg='#999', bg=COLOR_BG_WHITE, anchor='w').pack(fill='x', pady=(0, 16))
         
-        tk.Label(frame, text='例: 101=一(1)班, 502=五(2)班', font=(TK_FONT, 8), bg=COLOR_BG_WHITE, fg=COLOR_TEXT_LIGHT).pack(anchor='w', pady=(0, 8))
+        # ─── 已有班级 ───
+        existing_frame = tk.Frame(main, bg='#f5f7fa', bd=1, relief='solid',
+                                  highlightbackground='#e0e0e0', highlightthickness=1)
+        existing_frame.pack(fill='x', pady=(0, 18))
         
-        # 已有班级（紧凑行显示）
-        existing_frame = tk.Frame(frame, bg=COLOR_BG_LIGHT, relief='solid', bd=1)
-        existing_frame.pack(fill='x', pady=(0, 10))
-        existing_label = tk.Label(
-            existing_frame, text='', font=(TK_FONT, 9), bg=COLOR_BG_LIGHT, fg=COLOR_TEXT_MUTED,
-            justify='left', anchor='w', wraplength=290
-        )
-        existing_label.pack(fill='x', padx=8, pady=5)
+        existing_header_frame = tk.Frame(existing_frame, bg='#f5f7fa')
+        existing_header_frame.pack(fill='x', padx=10, pady=(8, 4))
+        tk.Label(existing_header_frame, text='当前已有班级', font=(TK_FONT, 9, 'bold'),
+                 fg='#555', bg='#f5f7fa').pack(side='left')
+        
+        tag_container = tk.Frame(existing_frame, bg='#f5f7fa')
+        tag_container.pack(fill='x', padx=10, pady=(0, 8))
         
         def _refresh_existing():
+            for w in tag_container.winfo_children():
+                w.destroy()
             grade_name = grade_var.get()
             grade_num = CN_TO_NUM.get(grade_name[0], 0)
             if grade_num:
                 all_classes = self.dm.get_classes_by_grade(grade_num)
                 if all_classes:
-                    items = [f'{cid}' for cid in sorted(all_classes.keys())]
-                    existing_label.config(text='已存在: ' + '  '.join(items), fg='#333')
+                    for cid in sorted(all_classes.keys()):
+                        cdata = all_classes[cid]
+                        tag = tk.Label(tag_container,
+                                       text=f' {cdata.get("name", cid)} ',
+                                       font=(TK_FONT, 9), fg='#1565c0', bg='#e3f2fd',
+                                       bd=0, padx=6, pady=2)
+                        tag.pack(side='left', padx=(0, 4), pady=2)
                 else:
-                    existing_label.config(text='暂无班级', fg=COLOR_TEXT_LIGHT)
+                    tk.Label(tag_container, text='暂 无 班 级',
+                             font=(TK_FONT, 9), fg='#bbb', bg='#f5f7fa').pack(anchor='w')
+                # 自动填入年级对应的编号
                 class_id_entry.delete(0, tk.END)
                 class_id_entry.insert(0, f'{grade_num}01')
         
@@ -1485,21 +1507,19 @@ class MainWindow:
         class_id_entry.focus_set()
         class_id_entry.select_range(0, 'end')
         
+        # ─── 按钮 ───
         def do_add():
             grade_name = grade_var.get()
             cid = class_id_entry.get().strip()
             if not cid:
                 messagebox.showwarning('提示', '请输入班级编号', parent=dialog)
                 return
-            
             grade = CN_TO_NUM.get(grade_name[0], 0)
             if grade == 0:
                 messagebox.showerror('错误', '无效年级', parent=dialog)
                 return
-            
             cname = f"{grade_name}({cid[-2:]})班" if len(cid) >= 2 else f"{grade_name}({cid})班"
             success, msg = self.dm.add_class(cid, grade, cname)
-            
             if success:
                 messagebox.showinfo('成功', msg, parent=dialog)
                 dialog.destroy()
@@ -1507,20 +1527,24 @@ class MainWindow:
             else:
                 messagebox.showerror('失败', msg, parent=dialog)
         
-        # 按钮行
-        btn_row = tk.Frame(frame, bg=COLOR_BG_WHITE)
-        btn_row.pack(fill='x', pady=(6, 0))
-        tk.Button(
-            btn_row, text='✓ 确认添加', command=do_add,
-            bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 11, 'bold'),
-            relief='flat', padx=25, pady=8, cursor='hand2',
-            activebackground='#1565c0', activeforeground='white'
-        ).pack(side='left', expand=True, fill='x')
-        tk.Button(
-            btn_row, text='取消', command=dialog.destroy,
-            bg='#ccc', fg='#333', font=(TK_FONT, 11),
-            relief='flat', padx=25, pady=8, cursor='hand2'
-        ).pack(side='left', padx=(8, 0))
+        btn_row = tk.Frame(main, bg=COLOR_BG_WHITE)
+        btn_row.pack(fill='x')
+        
+        tk.Button(btn_row, text='取 消', command=dialog.destroy,
+                  font=(TK_FONT, 11), relief='flat', bd=1,
+                  bg='#f0f0f0', fg='#666', activebackground='#e0e0e0',
+                  padx=20, pady=7, cursor='hand2').pack(side='right', padx=(8, 0))
+        tk.Button(btn_row, text='✓ 确认添加', command=do_add,
+                  font=(TK_FONT, 11, 'bold'), relief='flat',
+                  bg=COLOR_ACCENT, fg='white', activebackground='#1565c0',
+                  padx=20, pady=7, cursor='hand2').pack(side='right')
+        
+        dialog.bind('<Return>', lambda e: do_add())
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+        
+        dialog.update_idletasks()
+        dialog.geometry(f'{max(380, dialog.winfo_reqwidth())}x{dialog.winfo_reqheight() + 10}')
+        center_window(dialog, dialog.winfo_reqwidth(), dialog.winfo_reqheight() + 10)
     
     def _delete_class(self):
         """删除班级"""

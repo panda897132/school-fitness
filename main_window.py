@@ -107,6 +107,8 @@ class MainWindow:
         self.stats_menu.add_command(label='全校测试对比', command=self._show_school_test_comparison)
         self.stats_menu.add_separator()
         self.stats_menu.add_command(label='全校分析', command=self._show_school_analysis)
+        self.stats_menu.add_separator()
+        self.stats_menu.add_command(label='导出全校数据', command=self._export_school_data)
         
         # 帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0, font=(TK_FONT, 10))
@@ -2041,6 +2043,27 @@ class MainWindow:
     def _show_school_analysis(self):
         """全校综合分析：多维度数据展示"""
         show_school_analysis(self)
+
+    def _export_school_data(self):
+        """导出全校数据到Excel"""
+        from excel_io import export_statistics_report
+        from tkinter import filedialog, messagebox
+        filepath = filedialog.asksaveasfilename(
+            title='导出全校数据',
+            defaultextension='.xlsx',
+            filetypes=[('Excel文件', '*.xlsx')],
+            parent=self.window
+        )
+        if not filepath:
+            return
+        try:
+            success, msg = export_statistics_report(self.dm, filepath, scope='全校')
+            if success:
+                messagebox.showinfo('导出成功', msg, parent=self.window)
+            else:
+                messagebox.showerror('导出失败', msg, parent=self.window)
+        except Exception as e:
+            messagebox.showerror('导出失败', f'导出过程中出现异常:\n{str(e)}', parent=self.window)
 
     def _build_bmi_by_grade_tab(self, notebook):
         _build_bmi_by_grade_tab(notebook, self)

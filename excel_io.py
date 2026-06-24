@@ -11,21 +11,6 @@ from config import CN_TO_NUM, GRADE_ITEMS, NUM_TO_CN
 logger = logging.getLogger(__name__)
 
 
-def _find_column_index(ws, row_num, name_parts):
-    """在工作表某行中查找包含指定文本的列索引
-    
-    Args:
-        ws: 工作表
-        row_num: 行号
-        name_parts: 要匹配的文本片段列表
-    """
-    for col in range(1, ws.max_column + 1):
-        cell_val = str(ws.cell(row=row_num, column=col).value or '')
-        if all(part in cell_val for part in name_parts):
-            return col
-    return None
-
-
 def _normalize_header(hdr):
     """规范化表头：全角数字/符号转半角，去除不可见字符"""
     if not hdr:
@@ -501,27 +486,12 @@ def _import_old_format(wb, grade_sheet_names):
         # 查找表头行 (包含 "姓名" 的行)
         header_row = None
         for row in range(1, min(ws.max_row + 1, 10)):
-            for col in range(1, ws.max_column + 1):
-                val = _normalize_header(str(ws.cell(row=row, column=col).value or ''))
-                if '姓名' in val and ('学号' in val or _find_column_index(ws, row, ['学号'])):
-                    header_row = row
-                    break
-            if header_row:
+            row_values = [str(ws.cell(row=row, column=c).value or '') for c in range(1, ws.max_column + 1)]
+            has_name = any('姓名' in v for v in row_values)
+            has_number = any('学号' in v or '班级' in v or '学籍' in v for v in row_values)
+            if has_name and has_number:
+                header_row = row
                 break
-        
-        if header_row is None:
-            for row in range(1, min(ws.max_row + 1, 10)):
-                has_name = False
-                has_number = False
-                for col in range(1, ws.max_column + 1):
-                    val = _normalize_header(str(ws.cell(row=row, column=col).value or ''))
-                    if '姓名' in val:
-                        has_name = True
-                    if '学号' in val or '班级' in val:
-                        has_number = True
-                if has_name and has_number:
-                    header_row = row
-                    break
         
         if header_row is None:
             continue
@@ -809,24 +779,21 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
             # 各项目分析
             items = analysis_data.get('items', [])
             if items:
-                ws_analysis.cell(row=r, column=1, value='各项目分析').font = subtitle_font
-                r += 1
-                is_bmi_sheet = all(it['item_name'] == 'BMI' for it in items[:1])
-                if is_bmi_sheet or items[0]['item_name'] == 'BMI':
-                    # BMI 用四档
+                # 分离 BMI 和其他项目
+                bmi_items = [it for it in items if it['item_name'] == 'BMI']
+                other_items = [it for it in items if it['item_name'] != 'BMI']
+                
+                # ---- BMI 分析区块 ----
+                if bmi_items:
+                    ws_analysis.cell(row=r, column=1, value='BMI 专项分析').font = subtitle_font
+                    r += 1
                     _style_header(ws_analysis, r, 10,
                         ['项目', '正常', '超重', '低体重', '肥胖', '有效总数', '肥胖率'])
-                else:
-                    _style_header(ws_analysis, r, 10,
-                        ['项目', '优秀', '良好', '及格', '不及格', '有效总数', '优良人数', '优良率'])
-                r += 1
-                
-                for item in items:
-                    dist = item['distribution']
-                    eff = item['effective_total']
-                    
-                    if item['item_name'] == 'BMI':
-                        row_vals = [
+                    r += 1
+                    for item in bmi_items:
+                        dist = item['distribution']
+                        eff = item['effective_total']
+                        _style_row(ws_analysis, r, 7, [
                             item['item_name'],
                             str(dist.get('正常', 0)),
                             str(dist.get('超重', 0)),
@@ -834,11 +801,48 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                             str(dist.get('肥胖', 0)),
                             str(eff),
                             f"{item.get('obesity_rate', 0)}%"
-                        ]
-                    else:
+                        ], bold_first=True)
+                        r += 1
+                    r += 1
+
+                # ---- 跳绳附加分分析区块 ----
+                jrb = analysis_data.get('jump_rope_bonus')
+                if jrb and jrb.get('effective_total', 0) > 0:
+                    ws_analysis.cell(row=r, column=1, value='跳绳附加分分析').font = subtitle_font
+                    r += 1
+                    _style_header(ws_analysis, r, 10,
+                        ['指标', '数值'])
+                    r += 1
+                    _style_row(ws_analysis, r, 2, ['有效人数', str(jrb['effective_total'])], bold_first=True)
+                    r += 1
+                    _style_row(ws_analysis, r, 2, ['平均附加分', f"{jrb['avg_bonus']} 分"], bold_first=True)
+                    r += 1
+                    _style_row(ws_analysis, r, 2, ['最高附加分', f"{jrb['max_bonus']} 分"], bold_first=True)
+                    r += 1
+                    _style_row(ws_analysis, r, 2, ['获得附加分人数', f"{jrb['has_bonus_count']} 人 ({jrb['has_bonus_rate']}%)"], bold_first=True)
+                    r += 1
+                    # 附加分分布
+                    _style_header(ws_analysis, r, 10, ['附加分区间', '人数'])
+                    r += 1
+                    for label in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']:
+                        count = jrb['distribution'].get(label, 0)
+                        _style_row(ws_analysis, r, 2, [label, str(count)], bold_first=True)
+                        r += 1
+                    r += 1
+
+                # ---- 其他项目分析区块 ----
+                if other_items:
+                    ws_analysis.cell(row=r, column=1, value='测试项目分析').font = subtitle_font
+                    r += 1
+                    _style_header(ws_analysis, r, 10,
+                        ['项目', '优秀', '良好', '及格', '不及格', '有效总数', '优良人数', '优良率'])
+                    r += 1
+                    for item in other_items:
+                        dist = item['distribution']
+                        eff = item['effective_total']
                         excellent = dist.get('优秀', 0)
                         good = dist.get('良好', 0)
-                        row_vals = [
+                        _style_row(ws_analysis, r, 8, [
                             item['item_name'],
                             str(excellent),
                             str(good),
@@ -847,9 +851,8 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
                             str(eff),
                             str(excellent + good),
                             f"{item.get('excellence_rate', 0)}%"
-                        ]
-                    _style_row(ws_analysis, r, 8, row_vals, bold_first=True)
-                    r += 1
+                        ], bold_first=True)
+                        r += 1
             
             # 各年级概况（全校范围）
             if scope == '全校':
@@ -909,8 +912,11 @@ def export_statistics_report(dm, output_path, scope='全校', grade=None, class_
         ]
         _style_header(ws_detail, 2, len(headers), headers)
         
+        # 按班级编号、学号排序
+        sorted_students = sorted(stats['students'], key=lambda s: (str(s.get('class_id', '') or ''), str(s.get('student_number', '') or '')))
+        
         row = 3
-        for s in stats['students']:
+        for s in sorted_students:
             data_row = [
                 s.get('class_id', '') if s.get('class_id') else (class_id or ''),
                 s.get('student_number', ''),

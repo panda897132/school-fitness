@@ -5,7 +5,7 @@ import platform
 import subprocess
 import sys
 
-_APP_VERSION = "1.0.20"
+_APP_VERSION = "1.0.21"
 
 # 源码运行时自动从 git tag 获取版本号（打包时 CI 会改写此文件）
 if not getattr(sys, 'frozen', False):

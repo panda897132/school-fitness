@@ -72,73 +72,114 @@ def _count_distribution(students, key, categories):
     }
 
 
+def _count_jump_rope_bonus(students):
+    """统计跳绳附加分分布
+
+    返回: {distribution: {0分|1-5分|6-10分|11-15分|16-20分: count},
+            effective_total, avg_bonus, max_bonus,
+            has_bonus_count, has_bonus_rate}
+    """
+    categories = ['0分', '1-5分', '6-10分', '11-15分', '16-20分']
+    dist = {c: 0 for c in categories}
+    total_bonus = 0
+    max_bonus = 0
+    has_bonus = 0
+    effective = 0
+
+    for s in students:
+        if 'jump_rope_bonus' not in s:
+            continue
+        bonus = s.get('jump_rope_bonus', 0)
+        if bonus is None or bonus == '':
+            continue
+        bonus = int(bonus)
+        effective += 1
+        total_bonus += bonus
+        if bonus > max_bonus:
+            max_bonus = bonus
+        if bonus > 0:
+            has_bonus += 1
+        if bonus == 0:
+            dist['0分'] += 1
+        elif bonus <= 5:
+            dist['1-5分'] += 1
+        elif bonus <= 10:
+            dist['6-10分'] += 1
+        elif bonus <= 15:
+            dist['11-15分'] += 1
+        else:
+            dist['16-20分'] += 1
+
+    return {
+        'distribution': dist,
+        'effective_total': effective,
+        'avg_bonus': round(total_bonus / effective, 1) if effective else 0,
+        'max_bonus': max_bonus,
+        'has_bonus_count': has_bonus,
+        'has_bonus_rate': safe_rate(has_bonus, effective),
+    }
+
+
 def _count_item_grades(students, item_name, grade):
-    """统计某项目的等级分布
-    
+    """统计某项目的等级分布（单次遍历）
+
     对于BMI：等级为 正常/超重/低体重/肥胖
     对于测试项目：通过 scores[item_name] 映射到 优秀/良好/及格/不及格
-    
+
     返回: {优秀/良好/及格/不及格: count, effective_total, excellence_rate}
     或者: {正常/超重/低体重/肥胖: count, effective_total, obesity_rate}
     """
     if item_name == 'BMI':
         categories = ['正常', '超重', '低体重', '肥胖']
-        key = 'bmi_grade'
     else:
         categories = ['优秀', '良好', '及格', '不及格']
-        key = None  # 需要从 scores 中取
-    
-    male_students = [s for s in students if s.get('gender') == '男']
-    female_students = [s for s in students if s.get('gender') == '女']
-    
-    def _count_group(group, item, categories):
-        dist = {cat: 0 for cat in categories}
-        effective = 0
-        
-        for s in group:
-            if item == 'BMI':
-                g = s.get('bmi_grade', '')
-                if g in dist:
-                    dist[g] += 1
-                    effective += 1
+
+    dist = {cat: 0 for cat in categories}
+    male_dist = {cat: 0 for cat in categories}
+    female_dist = {cat: 0 for cat in categories}
+    effective = male_eff = female_eff = 0
+
+    for s in students:
+        if item_name == 'BMI':
+            g = s.get('bmi_grade', '')
+        else:
+            sc = s.get('scores', {}).get(item_name)
+            if sc is None or sc <= 0:
+                continue
+            if sc >= 90:
+                g = '优秀'
+            elif sc >= 80:
+                g = '良好'
+            elif sc >= 60:
+                g = '及格'
             else:
-                scores = s.get('scores', {})
-                sc = scores.get(item)
-                if sc is not None and sc > 0:
-                    effective += 1
-                    if sc >= 90:
-                        dist['优秀'] += 1
-                    elif sc >= 80:
-                        dist['良好'] += 1
-                    elif sc >= 60:
-                        dist['及格'] += 1
-                    else:
-                        dist['不及格'] += 1
-        
-        return dist, effective
-    
-    # 总体
-    overall_dist, overall_eff = _count_group(students, item_name, categories)
-    # 男生
-    male_dist, male_eff = _count_group(male_students, item_name, categories)
-    # 女生
-    female_dist, female_eff = _count_group(female_students, item_name, categories)
+                g = '不及格'
+
+        if g in dist:
+            dist[g] += 1
+            effective += 1
+            if s.get('gender') == '男':
+                male_dist[g] += 1
+                male_eff += 1
+            else:
+                female_dist[g] += 1
+                female_eff += 1
     
     result = {
         'item_name': item_name,
-        'distribution': overall_dist,
-        'effective_total': overall_eff,
+        'distribution': dist,
+        'effective_total': effective,
         'male': {'distribution': male_dist, 'effective_total': male_eff},
         'female': {'distribution': female_dist, 'effective_total': female_eff},
     }
-    
+
     if item_name == 'BMI':
-        result['obesity_rate'] = safe_rate(overall_dist.get('肥胖', 0), overall_eff)
+        result['obesity_rate'] = safe_rate(dist.get('肥胖', 0), effective)
         result['male']['obesity_rate'] = safe_rate(male_dist.get('肥胖', 0), male_eff)
         result['female']['obesity_rate'] = safe_rate(female_dist.get('肥胖', 0), female_eff)
     else:
-        excellence = overall_dist.get('优秀', 0) + overall_dist.get('良好', 0)
-        result['excellence_rate'] = safe_rate(excellence, overall_eff)
+        excellence = dist.get('优秀', 0) + dist.get('良好', 0)
+        result['excellence_rate'] = safe_rate(excellence, effective)
         male_exc = male_dist.get('优秀', 0) + male_dist.get('良好', 0)
         female_exc = female_dist.get('优秀', 0) + female_dist.get('良好', 0)
         result['male']['excellence_rate'] = safe_rate(male_exc, male_eff)
@@ -190,30 +231,43 @@ def analyze_class(dm, class_id):
     for item_name in items:
         item_analysis = _count_item_grades(valid_students, item_name, grade)
         item_analyses.append(item_analysis)
-    
+
+    # 跳绳附加分分析
+    jump_rope_bonus = _count_jump_rope_bonus(valid_students)
+
     # 总分等级分析 — 直接统计 total_grade 字段
     tg_result = _count_group_total_grade(valid_students)
     grade_dist = tg_result['distribution']
     grade_eff = tg_result['effective_total']
     total_excellence = grade_dist.get('优秀', 0) + grade_dist.get('良好', 0)
     
-    # 各项目均值
+    # 各项目均值（单次遍历收集）
     item_averages = {}
-    for item_name in ['BMI'] + items:
-        vals = []
-        for s in valid_students:
+    all_items = ['BMI'] + items
+    for item_name in all_items:
+        item_averages[item_name] = []
+
+    heights = []
+    weights = []
+
+    for s in valid_students:
+        h = s.get('height')
+        w = s.get('weight')
+        if h: heights.append(h)
+        if w: weights.append(w)
+        for item_name in all_items:
             if item_name == 'BMI':
                 v = s.get('bmi')
             else:
                 scores = s.get('scores', {})
                 v = scores.get(item_name)
             if v is not None and v > 0:
-                vals.append(v)
+                item_averages[item_name].append(v)
+
+    # 计算均值
+    for item_name in all_items:
+        vals = item_averages[item_name]
         item_averages[item_name] = round(sum(vals) / len(vals), 1) if vals else 0
-    
-    # 身高体重均值
-    heights = [s.get('height') for s in valid_students if s.get('height')]
-    weights = [s.get('weight') for s in valid_students if s.get('weight')]
     
     return {
         'class_id': str(class_id),
@@ -231,6 +285,9 @@ def analyze_class(dm, class_id):
         
         # 各项目分析
         'items': item_analyses,
+        
+        # 跳绳附加分分析
+        'jump_rope_bonus': jump_rope_bonus,
         
         # 总分等级分布
         'total_grade': {
@@ -332,6 +389,9 @@ def analyze_grade(dm, grade):
     item_analyses = []
     for item_name in items:
         item_analyses.append(_count_item_grades(valid_students, item_name, grade))
+
+    # 跳绳附加分分析
+    jump_rope_bonus = _count_jump_rope_bonus(valid_students)
     
     # 逐班分析
     class_analyses = []
@@ -388,6 +448,9 @@ def analyze_grade(dm, grade):
         
         # BMI
         'bmi': bmi_analysis,
+        
+        # 跳绳附加分分析
+        'jump_rope_bonus': jump_rope_bonus,
         
         # 各项目
         'items': item_analyses,
@@ -446,7 +509,19 @@ def analyze_school(dm):
     
     # 全校 BMI 分布
     school_bmi = _count_item_grades(valid_students, 'BMI', grade=1)
-    
+
+    # 各项目分析（用于导出）：收集所有年级的测试项目
+    school_items = [school_bmi]
+    all_test_items = set()
+    for grade in range(1, 7):
+        for item in GRADE_ITEMS.get(grade, []):
+            all_test_items.add(item)
+    for item_name in sorted(all_test_items):
+        school_items.append(_count_item_grades(valid_students, item_name, grade=1))
+
+    # 全校跳绳附加分分析
+    school_jump_rope_bonus = _count_jump_rope_bonus(valid_students)
+
     # 各项目均值 (分年级、分性别)
     def _item_avg_across_grades(item_name, grade_summaries):
         """对某项目计算各年级各性别均值"""
@@ -531,6 +606,12 @@ def analyze_school(dm):
         
         # 全校 BMI
         'bmi': school_bmi,
+        
+        # 各项目分析（导出用）
+        'items': school_items,
+        
+        # 全校跳绳附加分分析
+        'jump_rope_bonus': school_jump_rope_bonus,
         
         'students': all_students,
         'valid_students': valid_students,

@@ -1123,29 +1123,10 @@ def show_school_analysis(mw):
     _build_bmi_by_grade_tab(notebook, mw)
     _build_item_grade_distribution_tab(notebook, mw)
 
-    # ---- 导出按钮 ----
+    # ---- 关闭按钮 ----
     btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
     btn_frame.pack(fill='x', side='bottom', padx=8, pady=6)
 
-    def _export_school_data():
-        from excel_io import export_statistics_report
-        filepath = filedialog.asksaveasfilename(
-            title='导出全校分析报告',
-            defaultextension='.xlsx',
-            filetypes=[('Excel文件', '*.xlsx')],
-            parent=dialog
-        )
-        if not filepath:
-            return
-        success, msg = export_statistics_report(mw.dm, filepath, scope='全校')
-        if success:
-            messagebox.showinfo('导出成功', msg, parent=dialog)
-        else:
-            messagebox.showerror('导出失败', msg, parent=dialog)
-
-    tk.Button(btn_frame, text='📤 导出数据', command=_export_school_data,
-              bg=COLOR_ACCENT, fg='white', font=(TK_FONT, 10, 'bold'),
-              relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)
     tk.Button(btn_frame, text='关闭', command=dialog.destroy,
               bg=COLOR_NEUTRAL, fg='white', font=(TK_FONT, 10),
               relief='flat', padx=15, pady=5, cursor='hand2').pack(side='right', padx=5)

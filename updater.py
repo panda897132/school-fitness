@@ -12,7 +12,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
-from config import APP_VERSION, APP_REPO, TK_FONT, FONT_BOLD_11
+from config import APP_VERSION, APP_REPO, TK_FONT, FONT_BOLD_11, DOWNLOAD_MIRROR as _DOWNLOAD_MIRROR
 
 # SSL 按需导入——_ssl.pyd 在某些机器上可能因 DLL 缺失无法加载，
 # 不影响 app 启动，只是不能检查更新。
@@ -138,8 +138,20 @@ def check_latest_version():
     )
 
 
+def _apply_download_mirror(url):
+    """如果配置了 DOWNLOAD_MIRROR，用镜像加速大文件下载
+
+    只对 GitHub Release 下载链接生效，不代理 API 请求。
+    """
+    mirror = _DOWNLOAD_MIRROR.strip().rstrip('/')
+    if mirror and url.startswith("https://github.com/"):
+        return f"{mirror}/{url.lstrip('/')}"
+    return url
+
+
 def download_update(url, progress_callback=None):
     """下载更新文件到临时目录，返回本地路径"""
+    url = _apply_download_mirror(url)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".exe")
     tmp_path = tmp.name
     tmp.close()

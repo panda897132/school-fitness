@@ -149,20 +149,15 @@ def _apply_download_mirror(url):
     return url
 
 
-def download_update(url, progress_callback=None):
-    """下载更新文件到临时目录，返回本地路径"""
-    url = _apply_download_mirror(url)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".exe")
-    tmp_path = tmp.name
-    tmp.close()
-
-    resp = _urlopen(url, timeout=120)
+def _do_download(url, tmp_path, progress_callback):
+    """执行单次下载，返回 (downloaded_bytes, total_bytes)"""
+    resp = _urlopen(url, timeout=180)
     if resp is None:
         raise RuntimeError("SSL 不可用，无法下载更新")
 
     total = int(resp.headers.get("Content-Length", 0))
     downloaded = 0
-    chunk_size = 8192
+    chunk_size = 65536
 
     with open(tmp_path, "wb") as f:
         while True:
@@ -173,6 +168,41 @@ def download_update(url, progress_callback=None):
             downloaded += len(chunk)
             if progress_callback and total:
                 progress_callback(downloaded / total)
+
+    return downloaded, total
+
+
+def download_update(url, progress_callback=None):
+    """下载更新文件到临时目录，返回本地路径
+
+    自动校验文件完整性：镜像下载文件损坏时自动回退到直连。
+    """
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".exe")
+    tmp_path = tmp.name
+    tmp.close()
+
+    # 第一轮：尝试镜像下载（如果配置了）
+    mirror_url = _apply_download_mirror(url)
+    used_mirror = mirror_url != url
+    downloaded, total = _do_download(mirror_url, tmp_path, progress_callback)
+
+    # 完整性校验：Content-Length > 0 且下载大小不匹配 → 文件损坏
+    if total > 0 and downloaded != total:
+        os.unlink(tmp_path)  # 删掉损坏文件
+        if used_mirror:
+            # 镜像损坏，回退到直连
+            downloaded, total = _do_download(url, tmp_path, progress_callback)
+            if total > 0 and downloaded != total:
+                os.unlink(tmp_path)
+                raise RuntimeError(f"下载文件不完整（{downloaded}/{total} bytes），请检查网络后重试")
+        else:
+            raise RuntimeError(f"下载文件不完整（{downloaded}/{total} bytes），请检查网络后重试")
+
+    # 二次校验：EXE 至少应有 15 MB（学校体测系统），过小说明是错误页面
+    mb = downloaded / 1024 / 1024
+    if mb < 15:
+        os.unlink(tmp_path)
+        raise RuntimeError(f"下载的文件异常（仅 {mb:.1f} MB），请检查下载链接")
 
     return tmp_path
 

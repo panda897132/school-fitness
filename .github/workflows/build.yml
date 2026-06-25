@@ -111,6 +111,11 @@ jobs:
       contents: write
 
     steps:
+      - name: 📥 检出代码（用于生成 Release Notes）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整 git 历史算 changelog
+
       - name: 📥 下载构建产物
         uses: actions/download-artifact@v4
         with:
@@ -128,12 +133,16 @@ jobs:
           done
           zip -r ../SchoolFitness.zip *.exe
 
+      - name: 📝 生成 Release Notes
+        run: |
+          python build_release_notes.py "${{ github.ref_name }}" > release_body.md
+
       - name: 🏷️ 创建 Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             SchoolFitness.zip
             release-artifacts/SchoolFitness.exe
-          generate_release_notes: true
+          body_path: release_body.md
           draft: false
           prerelease: false

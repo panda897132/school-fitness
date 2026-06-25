@@ -174,7 +174,7 @@ def _launch_updater_bat(old_exe, new_exe, app_dir):
     bat_path = os.path.join(app_dir, "_upgrade.bat")
     bat_content = (
         '@echo off\r\n'
-        'timeout /t 3 /nobreak >nul\r\n'
+        'timeout /t 6 /nobreak >nul\r\n'
         f'move /y "{old_exe}" "{old_exe}.bak"\r\n'
         f'move /y "{new_exe}" "{old_exe}"\r\n'
         f'if exist "{old_exe}" (\r\n'

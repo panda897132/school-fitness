@@ -12,3 +12,4 @@
 3. `git push origin dev`
 4. `git tag v<新版本号>`
 5. `git push origin v<新版本号>`（触发 CI 构建 Release）
+6. CI 自动调用 `build_release_notes.py` 生成中文 Release Notes

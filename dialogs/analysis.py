@@ -15,6 +15,18 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 
+def _enable_mousewheel(canvas, scroll_frame):
+    """为 Canvas 绑定鼠标滚轮"""
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+    def _bind(event=None):
+        canvas.bind_all('<MouseWheel>', _on_mousewheel)
+    def _unbind(event=None):
+        canvas.unbind_all('<MouseWheel>')
+    scroll_frame.bind('<Enter>', _bind)
+    scroll_frame.bind('<Leave>', _unbind)
+
+
 def _get_students_for_round(all_classes, round_index):
     """获取某轮次所有班级的学生列表（共用辅助函数）"""
     students = []
@@ -23,6 +35,196 @@ def _get_students_for_round(all_classes, round_index):
         if round_index < len(rounds):
             students.extend(rounds[round_index].get('students', []))
     return students
+
+
+def _build_jump_rope_bonus_tab(frame, students, title='跳绳附加分分析'):
+    """构建跳绳附加分概要（班级/单组用）"""
+    from analysis import _count_jump_rope_bonus
+    jrb = _count_jump_rope_bonus(students)
+
+    tk.Label(frame, text=title,
+             font=(TK_FONT, 14, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', pady=(10, 5))
+
+    info_text = (
+        f"参与跳绳学生：{jrb['effective_total']}人\n"
+        f"平均附加分：{jrb['avg_bonus']}分\n"
+        f"最高附加分：{jrb['max_bonus']}分\n"
+        f"获得附加分人数：{jrb['has_bonus_count']}人  ({jrb['has_bonus_rate']}%)"
+    )
+    tk.Label(frame, text=info_text, font=(TK_FONT, 11), bg=COLOR_BG_WHITE,
+             justify='left', anchor='w').pack(anchor='w', pady=(5, 10))
+
+    cols = ('分数段', '人数', '占比')
+    tree = ttk.Treeview(frame, columns=cols, show='headings', height=6)
+    for c in cols:
+        tree.heading(c, text=c, anchor='center')
+        tree.column(c, width=100, anchor='center', minwidth=60)
+
+    dist = jrb['distribution']
+    eff = jrb['effective_total']
+    for cat in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']:
+        cnt = dist.get(cat, 0)
+        pct = f"{cnt / eff * 100:.1f}%" if eff else "0%"
+        tag = ('bonus_high',) if cat in ('11-15分', '16-20分') else ()
+        tree.insert('', tk.END, values=(cat, cnt, pct), tags=tag)
+
+    tree.tag_configure('bonus_high', background='#e8f5e9')
+    tree.pack()
+
+
+def _build_school_jump_rope_tab(notebook, mw):
+    """全校跳绳附加分分析 — 全校汇总 + 各年级对比"""
+    from analysis import _count_jump_rope_bonus
+    frame = tk.Frame(notebook, bg=COLOR_BG_WHITE)
+    notebook.add(frame, text='跳绳附加分')
+
+    canvas = tk.Canvas(frame, bg=COLOR_BG_WHITE, highlightthickness=0)
+    sb = tk.Scrollbar(frame, orient='vertical', command=canvas.yview)
+    scroll_frame = tk.Frame(canvas, bg=COLOR_BG_WHITE)
+    scroll_frame.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+    canvas.create_window((0, 0), window=scroll_frame, anchor='nw')
+    canvas.configure(yscrollcommand=sb.set)
+    canvas.pack(side='left', fill='both', expand=True)
+    sb.pack(side='right', fill='y')
+    _enable_mousewheel(canvas, scroll_frame)
+
+    # 全校汇总
+    all_students = []
+    for g in range(1, 7):
+        for cid in mw.dm.get_classes_by_grade(g):
+            all_students.extend(mw.dm.get_students(cid))
+    _build_jump_rope_bonus_tab(scroll_frame, all_students, '全校跳绳附加分汇总')
+    tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
+
+    # 各年级对比柱状图
+    grade_avg_data = []
+    grade_students_map = {}
+    for g in range(1, 7):
+        gstudents = []
+        for cid in mw.dm.get_classes_by_grade(g):
+            gstudents.extend(mw.dm.get_students(cid))
+        if not gstudents:
+            continue
+        jrb = _count_jump_rope_bonus(gstudents)
+        if jrb['effective_total'] > 0:
+            grade_avg_data.append((GRADE_NAMES[g - 1], jrb['avg_bonus']))
+            grade_students_map[GRADE_NAMES[g - 1]] = gstudents
+
+    if grade_avg_data:
+        tk.Label(scroll_frame, text='各年级平均附加分对比',
+                 font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(10, 0))
+        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=250)
+        chart_f.pack(fill='x', padx=20, pady=5)
+        chart_f.pack_propagate(False)
+        c = ChartBuilder.create_bar_chart(chart_f, grade_avg_data, title='各年级平均附加分对比')
+        c.get_tk_widget().pack(fill='both', expand=True)
+        c.draw()
+        tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
+
+    # 各年级分布详情
+    tk.Label(scroll_frame, text='各年级分布详情',
+             font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(5, 5))
+
+    grade_cols = ('年级', '人数', '平均分', '最高分', '有附加分率',
+                  '0分', '1-5分', '6-10分', '11-15分', '16-20分')
+    grade_tree = ttk.Treeview(scroll_frame, columns=grade_cols, show='headings', height=6)
+    for c in grade_cols:
+        grade_tree.heading(c, text=c, anchor='center')
+        grade_tree.column(c, width=70, anchor='center', minwidth=50)
+    grade_tree.column('年级', width=70)
+    grade_tree.column('有附加分率', width=90)
+
+    for gname, gstudents in grade_students_map.items():
+        jrb = _count_jump_rope_bonus(gstudents)
+        dist = jrb['distribution']
+        eff = jrb['effective_total']
+        grade_tree.insert('', tk.END, values=(
+            gname, eff, jrb['avg_bonus'], jrb['max_bonus'],
+            f"{jrb['has_bonus_rate']}%",
+            dist.get('0分', 0), dist.get('1-5分', 0), dist.get('6-10分', 0),
+            dist.get('11-15分', 0), dist.get('16-20分', 0),
+        ))
+    grade_tree.pack(padx=20, pady=(0, 10))
+
+
+def _build_grade_jump_rope_tab(notebook, mw, grade):
+    """年级跳绳附加分分析 — 年级汇总 + 各班对比"""
+    from analysis import _count_jump_rope_bonus
+    frame = tk.Frame(notebook, bg=COLOR_BG_WHITE)
+    notebook.add(frame, text='跳绳附加分')
+
+    canvas = tk.Canvas(frame, bg=COLOR_BG_WHITE, highlightthickness=0)
+    sb = tk.Scrollbar(frame, orient='vertical', command=canvas.yview)
+    scroll_frame = tk.Frame(canvas, bg=COLOR_BG_WHITE)
+    scroll_frame.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+    canvas.create_window((0, 0), window=scroll_frame, anchor='nw')
+    canvas.configure(yscrollcommand=sb.set)
+    canvas.pack(side='left', fill='both', expand=True)
+    sb.pack(side='right', fill='y')
+    _enable_mousewheel(canvas, scroll_frame)
+
+    # 年级汇总
+    grade_students = []
+    for cid in mw.dm.get_classes_by_grade(grade):
+        grade_students.extend(mw.dm.get_students(cid))
+    gname = GRADE_NAMES[grade - 1]
+    _build_jump_rope_bonus_tab(scroll_frame, grade_students, f'{gname}跳绳附加分汇总')
+    tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
+
+    # 各班平均附加分对比柱状图
+    class_avg_data = []
+    class_jrb_map = {}
+    classes = mw.dm.get_classes_by_grade(grade)
+    for cid, cdata in classes.items():
+        cstudents = mw.dm.get_students(cid)
+        if not cstudents:
+            continue
+        jrb = _count_jump_rope_bonus(cstudents)
+        if jrb['effective_total'] > 0:
+            cname = cdata.get('name', cid)
+            class_avg_data.append((cname, jrb['avg_bonus']))
+            class_jrb_map[cid] = (cname, cstudents, jrb)
+
+    if class_avg_data:
+        tk.Label(scroll_frame, text='各班平均附加分对比',
+                 font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(10, 0))
+        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=250)
+        chart_f.pack(fill='x', padx=20, pady=5)
+        chart_f.pack_propagate(False)
+        c = ChartBuilder.create_bar_chart(chart_f, class_avg_data, title=f'{gname}各班平均附加分对比')
+        c.get_tk_widget().pack(fill='both', expand=True)
+        c.draw()
+        tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
+
+    # 各班分布详情
+    tk.Label(scroll_frame, text='各班分布详情',
+             font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(5, 5))
+
+    class_cols = ('班级', '人数', '平均分', '最高分', '有附加分率',
+                  '0分', '1-5分', '6-10分', '11-15分', '16-20分')
+    class_tree = ttk.Treeview(scroll_frame, columns=class_cols, show='headings', height=6)
+    for c in class_cols:
+        class_tree.heading(c, text=c, anchor='center')
+        class_tree.column(c, width=70, anchor='center', minwidth=50)
+    class_tree.column('班级', width=70)
+    class_tree.column('有附加分率', width=90)
+
+    for cid, (cname, cstudents, jrb) in class_jrb_map.items():
+        dist = jrb['distribution']
+        eff = jrb['effective_total']
+        row_id = class_tree.insert('', tk.END, values=(
+            cname, eff, jrb['avg_bonus'], jrb['max_bonus'],
+            f"{jrb['has_bonus_rate']}%",
+            dist.get('0分', 0), dist.get('1-5分', 0), dist.get('6-10分', 0),
+            dist.get('11-15分', 0), dist.get('16-20分', 0),
+        ))
+        avg = jrb['avg_bonus']
+        if class_avg_data:
+            grade_avg = sum(v for _, v in class_avg_data) / len(class_avg_data)
+            if avg > grade_avg:
+                class_tree.tag_configure('above_avg', background='#e8f5e9')
+                class_tree.item(row_id, tags=('above_avg',))
+    class_tree.pack(padx=20, pady=(0, 10))
 
 
 # ============================================================
@@ -257,6 +459,11 @@ def show_class_full_analysis(mw):
             title=f'{class_name}各项目等级分布')
         c.get_tk_widget().pack(fill='both', expand=True)
         c.draw()
+
+    # ---- Tab 4: 跳绳附加分分析 ----
+    jr_frame = tk.Frame(notebook, bg=COLOR_BG_WHITE)
+    notebook.add(jr_frame, text='跳绳附加分')
+    _build_jump_rope_bonus_tab(jr_frame, students, f'{class_name}跳绳附加分分析')
 
     # ---- 导出按钮 ----
     btn_frame = tk.Frame(dialog, bg=COLOR_BG_LIGHT)
@@ -847,6 +1054,9 @@ def show_grade_analysis(mw, grade=None, show_selector=True):
             c3.get_tk_widget().pack(fill='both', expand=True, padx=10, pady=10)
             c3.draw()
 
+        # Tab 4: 跳绳附加分分析
+        _build_grade_jump_rope_tab(notebook, mw, g)
+
     _render(grade)
 
     if show_selector:
@@ -1118,7 +1328,10 @@ def show_school_analysis(mw):
     else:
         tk.Label(trend_frame, text='暂无数据', bg=COLOR_BG_WHITE, font=(TK_FONT, 12)).pack(expand=True)
 
-    # ---- Tab 4-7: 详细分析 ----
+    # ---- Tab 4: 跳绳附加分分析 ----
+    _build_school_jump_rope_tab(notebook, mw)
+
+    # ---- Tab 5-8: 详细分析 ----
     _build_test_comparison_table(notebook, mw, title='全校各轮次测试对比')
     _build_bmi_by_grade_tab(notebook, mw)
     _build_item_grade_distribution_tab(notebook, mw)

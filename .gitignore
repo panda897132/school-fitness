@@ -8,6 +8,11 @@ data/students.json
 data/app_config.json
 *.bak
 
+# 数据文件
+*.xlsx
+*.xls
+*.csv
+
 # 数据库
 *.db
 

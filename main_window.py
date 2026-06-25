@@ -117,6 +117,8 @@ class MainWindow:
         help_menu.add_command(label='更新日志', command=self._show_changelog)
         help_menu.add_command(label='检查更新...', command=self._check_update)
         help_menu.add_separator()
+        help_menu.add_command(label='联系开发者', command=self._show_contact)
+        help_menu.add_separator()
         help_menu.add_command(label='关于', command=self._show_about)
         
         # 快捷键绑定
@@ -2174,6 +2176,14 @@ class MainWindow:
     def _check_update(self):
         from updater import UpdateDialog
         UpdateDialog(self.window)
+
+    def _show_contact(self):
+        messagebox.showinfo('联系开发者',
+            '欢迎提出优化建议或反馈问题！\n\n'
+            '📧 邮箱: 378987581@qq.com\n\n'
+            '您可以通过邮件联系开发者，\n'
+            '我们会及时回复处理。'
+        )
 
     def _show_about(self):
         messagebox.showinfo('关于',

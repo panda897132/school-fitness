@@ -54,22 +54,35 @@ def _build_jump_rope_bonus_tab(frame, students, title='跳绳附加分分析'):
     tk.Label(frame, text=info_text, font=(TK_FONT, 11), bg=COLOR_BG_WHITE,
              justify='left', anchor='w').pack(anchor='w', pady=(5, 10))
 
-    cols = ('分数段', '人数', '占比')
-    tree = ttk.Treeview(frame, columns=cols, show='headings', height=6)
-    for c in cols:
-        tree.heading(c, text=c, anchor='center')
-        tree.column(c, width=100, anchor='center', minwidth=60)
-
     dist = jrb['distribution']
     eff = jrb['effective_total']
-    for cat in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']:
-        cnt = dist.get(cat, 0)
-        pct = f"{cnt / eff * 100:.1f}%" if eff else "0%"
-        tag = ('bonus_high',) if cat in ('11-15分', '16-20分') else ()
-        tree.insert('', tk.END, values=(cat, cnt, pct), tags=tag)
-
-    tree.tag_configure('bonus_high', background='#e8f5e9')
-    tree.pack()
+    if eff > 0:
+        chart_f = tk.Frame(frame, bg=COLOR_BG_WHITE, height=260)
+        chart_f.pack(fill='x', padx=20, pady=(5, 0))
+        chart_f.pack_propagate(False)
+        fig = Figure(figsize=(5, 2.4), dpi=100)
+        ax = fig.add_subplot(111)
+        cats = ['0分', '1-5分', '6-10分', '11-15分', '16-20分']
+        vals = [dist.get(c, 0) for c in cats]
+        colors_bar_chart = ['#ef9a9a', '#ffcc80', '#fff59d', '#a5d6a7', '#66bb6a']
+        bars =         ax.bar(cats, vals, color=colors_bar_chart, alpha=0.9, edgecolor='white', linewidth=0.5)
+        max_val = max(vals) if vals else 1
+        for bar, val in zip(bars, vals):
+            if val > 0:
+                pct = val / eff * 100
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_val * 0.04,
+                        f'{val}人（{pct:.0f}%）', ha='center', va='bottom', fontsize=12, fontweight='bold')
+        ax.set_ylabel('人数', fontsize=11)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=9)
+        ax.set_ylim(0, max_val * 1.3 if max_val > 0 else 10)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        fig.subplots_adjust(bottom=0.2, left=0.12, right=0.95)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        c = FigureCanvasTkAgg(fig, master=chart_f)
+        c.get_tk_widget().pack(fill='both', expand=True)
+        c.draw()
 
 
 def _build_school_jump_rope_tab(notebook, mw):
@@ -113,10 +126,31 @@ def _build_school_jump_rope_tab(notebook, mw):
     if grade_avg_data:
         tk.Label(scroll_frame, text='各年级平均附加分对比',
                  font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(10, 0))
-        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=250)
+        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=300)
         chart_f.pack(fill='x', padx=20, pady=5)
         chart_f.pack_propagate(False)
-        c = ChartBuilder.create_bar_chart(chart_f, grade_avg_data, title='各年级平均附加分对比')
+        fig = Figure(figsize=(7, 2.8), dpi=100)
+        ax = fig.add_subplot(111)
+        names = [d[0] for d in grade_avg_data]
+        vals = [d[1] for d in grade_avg_data]
+        all_avg = sum(vals) / len(vals)
+        colors_bar = ['#43a047' if v >= all_avg else '#e53935' for v in vals]
+        bars = ax.bar(names, vals, color=colors_bar, alpha=0.85, edgecolor='white', linewidth=0.5, width=0.5)
+        ax.axhline(y=all_avg, color='#1565c0', linestyle='--', linewidth=1.2)
+        ax.text(len(names) - 0.5, all_avg, f'  均值 {all_avg:.1f}分', color='#1565c0',
+                fontsize=10, fontweight='bold', va='bottom', ha='left')
+        for bar, val in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(vals) * 0.02,
+                    f'{val:.1f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
+        ax.set_ylabel('平均附加分(分)', fontsize=12)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
+        ax.set_ylim(0, max(vals) * 1.25 if vals else 10)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        fig.subplots_adjust(bottom=0.2, left=0.12, right=0.95)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        c = FigureCanvasTkAgg(fig, master=chart_f)
         c.get_tk_widget().pack(fill='both', expand=True)
         c.draw()
         tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
@@ -126,24 +160,58 @@ def _build_school_jump_rope_tab(notebook, mw):
              font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(5, 5))
 
     grade_cols = ('年级', '人数', '平均分', '最高分', '有附加分率',
-                  '0分', '1-5分', '6-10分', '11-15分', '16-20分')
+                  '0分\n人数', '0分\n占比', '1-5分\n人数', '1-5分\n占比',
+                  '6-10分\n人数', '6-10分\n占比', '11-15分\n人数', '11-15分\n占比',
+                  '16-20分\n人数', '16-20分\n占比')
     grade_tree = ttk.Treeview(scroll_frame, columns=grade_cols, show='headings', height=6)
+    col_widths = {'年级': 60, '人数': 45, '平均分': 55, '最高分': 55, '有附加分率': 70,
+                  '0分\n人数': 48, '0分\n占比': 48, '1-5分\n人数': 52, '1-5分\n占比': 48,
+                  '6-10分\n人数': 52, '6-10分\n占比': 48, '11-15分\n人数': 52, '11-15分\n占比': 48,
+                  '16-20分\n人数': 52, '16-20分\n占比': 48}
     for c in grade_cols:
         grade_tree.heading(c, text=c, anchor='center')
-        grade_tree.column(c, width=70, anchor='center', minwidth=50)
-    grade_tree.column('年级', width=70)
-    grade_tree.column('有附加分率', width=90)
+        grade_tree.column(c, width=col_widths.get(c, 50), anchor='center', minwidth=40)
 
-    for gname, gstudents in grade_students_map.items():
-        jrb = _count_jump_rope_bonus(gstudents)
+    grade_tree.tag_configure('above_avg', background='#e8f5e9')
+    grade_tree.tag_configure('below_avg', background='#ffebee')
+    grade_tree.tag_configure('summary_row', background='#e3f2fd', font=(TK_FONT, 10, 'bold'))
+
+    grade_items = [(gname, gstudents, _count_jump_rope_bonus(gstudents))
+                   for gname, gstudents in grade_students_map.items()]
+    grade_items.sort(key=lambda x: x[2]['avg_bonus'], reverse=True)
+    avg_of_avgs = sum(jrb['avg_bonus'] for _, _, jrb in grade_items) / len(grade_items) if grade_items else 0
+
+    def _pct(val, total):
+        return f"{val/total*100:.0f}%" if total else "0%"
+
+    for gname, gstudents, jrb in grade_items:
         dist = jrb['distribution']
         eff = jrb['effective_total']
-        grade_tree.insert('', tk.END, values=(
+        d = [dist.get(c, 0) for c in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']]
+        row_id = grade_tree.insert('', tk.END, values=(
             gname, eff, jrb['avg_bonus'], jrb['max_bonus'],
             f"{jrb['has_bonus_rate']}%",
-            dist.get('0分', 0), dist.get('1-5分', 0), dist.get('6-10分', 0),
-            dist.get('11-15分', 0), dist.get('16-20分', 0),
+            d[0], _pct(d[0], eff), d[1], _pct(d[1], eff),
+            d[2], _pct(d[2], eff), d[3], _pct(d[3], eff), d[4], _pct(d[4], eff),
         ))
+        if jrb['avg_bonus'] >= avg_of_avgs:
+            grade_tree.item(row_id, tags=('above_avg',))
+        else:
+            grade_tree.item(row_id, tags=('below_avg',))
+
+    if grade_items:
+        total_eff = sum(jrb['effective_total'] for _, _, jrb in grade_items)
+        total_avg = sum(jrb['avg_bonus'] * jrb['effective_total'] for _, _, jrb in grade_items) / total_eff if total_eff else 0
+        sd = [sum(jrb['distribution'].get(c, 0) for _, _, jrb in grade_items)
+              for c in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']]
+        grade_tree.insert('', tk.END, values=(
+            '📊 合计', total_eff, round(total_avg, 1),
+            max(jrb['max_bonus'] for _, _, jrb in grade_items),
+            f"{sum(jrb['has_bonus_count'] for _, _, jrb in grade_items) / total_eff * 100:.0f}%" if total_eff else '0%',
+            sd[0], _pct(sd[0], total_eff), sd[1], _pct(sd[1], total_eff),
+            sd[2], _pct(sd[2], total_eff), sd[3], _pct(sd[3], total_eff),
+            sd[4], _pct(sd[4], total_eff),
+        ), tags=('summary_row',))
     grade_tree.pack(padx=20, pady=(0, 10))
 
 
@@ -188,42 +256,91 @@ def _build_grade_jump_rope_tab(notebook, mw, grade):
     if class_avg_data:
         tk.Label(scroll_frame, text='各班平均附加分对比',
                  font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(10, 0))
-        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=250)
+        chart_f = tk.Frame(scroll_frame, bg=COLOR_BG_WHITE, height=300)
         chart_f.pack(fill='x', padx=20, pady=5)
         chart_f.pack_propagate(False)
-        c = ChartBuilder.create_bar_chart(chart_f, class_avg_data, title=f'{gname}各班平均附加分对比')
+        fig = Figure(figsize=(7, 2.8), dpi=100)
+        ax = fig.add_subplot(111)
+        names = [d[0] for d in class_avg_data]
+        vals = [d[1] for d in class_avg_data]
+        grade_avg = sum(vals) / len(vals)
+        colors_bar = ['#43a047' if v >= grade_avg else '#e53935' for v in vals]
+        bars = ax.bar(names, vals, color=colors_bar, alpha=0.85, edgecolor='white', linewidth=0.5, width=0.5)
+        ax.axhline(y=grade_avg, color='#1565c0', linestyle='--', linewidth=1.2)
+        ax.text(len(names) - 0.5, grade_avg, f'  年级均值 {grade_avg:.1f}分', color='#1565c0',
+                fontsize=10, fontweight='bold', va='bottom', ha='left')
+        for bar, val in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(vals) * 0.02,
+                    f'{val:.1f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
+        ax.set_ylabel('平均附加分(分)', fontsize=12)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
+        ax.set_ylim(0, max(vals) * 1.25 if vals else 10)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        fig.subplots_adjust(bottom=0.2, left=0.12, right=0.95)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        c = FigureCanvasTkAgg(fig, master=chart_f)
         c.get_tk_widget().pack(fill='both', expand=True)
         c.draw()
         tk.Frame(scroll_frame, bg='#ddd', height=1).pack(fill='x', padx=20, pady=10)
 
     # 各班分布详情
-    tk.Label(scroll_frame, text='各班分布详情',
+    tk.Label(scroll_frame, text='各班分布详情（按平均分从高到低排序）',
              font=(TK_FONT, 13, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w', padx=20, pady=(5, 5))
 
     class_cols = ('班级', '人数', '平均分', '最高分', '有附加分率',
-                  '0分', '1-5分', '6-10分', '11-15分', '16-20分')
+                  '0分\n人数', '0分\n占比', '1-5分\n人数', '1-5分\n占比',
+                  '6-10分\n人数', '6-10分\n占比', '11-15分\n人数', '11-15分\n占比',
+                  '16-20分\n人数', '16-20分\n占比')
     class_tree = ttk.Treeview(scroll_frame, columns=class_cols, show='headings', height=6)
+    col_widths = {'班级': 60, '人数': 45, '平均分': 55, '最高分': 55, '有附加分率': 70,
+                  '0分\n人数': 48, '0分\n占比': 48, '1-5分\n人数': 52, '1-5分\n占比': 48,
+                  '6-10分\n人数': 52, '6-10分\n占比': 48, '11-15分\n人数': 52, '11-15分\n占比': 48,
+                  '16-20分\n人数': 52, '16-20分\n占比': 48}
     for c in class_cols:
         class_tree.heading(c, text=c, anchor='center')
-        class_tree.column(c, width=70, anchor='center', minwidth=50)
-    class_tree.column('班级', width=70)
-    class_tree.column('有附加分率', width=90)
+        class_tree.column(c, width=col_widths.get(c, 50), anchor='center', minwidth=40)
 
-    for cid, (cname, cstudents, jrb) in class_jrb_map.items():
+    class_tree.tag_configure('above_avg', background='#e8f5e9')
+    class_tree.tag_configure('below_avg', background='#ffebee')
+    class_tree.tag_configure('summary_row', background='#e3f2fd', font=(TK_FONT, 10, 'bold'))
+
+    class_items = sorted(class_jrb_map.items(),
+                         key=lambda x: x[1][2]['avg_bonus'], reverse=True)
+    grade_avg = sum(jrb['avg_bonus'] for _, (_, _, jrb) in class_items) / len(class_items) if class_items else 0
+
+    def _pct(val, total):
+        return f"{val/total*100:.0f}%" if total else "0%"
+
+    for cid, (cname, _, jrb) in class_items:
         dist = jrb['distribution']
         eff = jrb['effective_total']
+        d = [dist.get(c, 0) for c in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']]
         row_id = class_tree.insert('', tk.END, values=(
             cname, eff, jrb['avg_bonus'], jrb['max_bonus'],
             f"{jrb['has_bonus_rate']}%",
-            dist.get('0分', 0), dist.get('1-5分', 0), dist.get('6-10分', 0),
-            dist.get('11-15分', 0), dist.get('16-20分', 0),
+            d[0], _pct(d[0], eff), d[1], _pct(d[1], eff),
+            d[2], _pct(d[2], eff), d[3], _pct(d[3], eff), d[4], _pct(d[4], eff),
         ))
-        avg = jrb['avg_bonus']
-        if class_avg_data:
-            grade_avg = sum(v for _, v in class_avg_data) / len(class_avg_data)
-            if avg > grade_avg:
-                class_tree.tag_configure('above_avg', background='#e8f5e9')
-                class_tree.item(row_id, tags=('above_avg',))
+        if jrb['avg_bonus'] >= grade_avg:
+            class_tree.item(row_id, tags=('above_avg',))
+        else:
+            class_tree.item(row_id, tags=('below_avg',))
+
+    if class_items:
+        total_eff = sum(jrb['effective_total'] for _, (_, _, jrb) in class_items)
+        total_avg = sum(jrb['avg_bonus'] * jrb['effective_total'] for _, (_, _, jrb) in class_items) / total_eff if total_eff else 0
+        sd = [sum(jrb['distribution'].get(c, 0) for _, (_, _, jrb) in class_items)
+              for c in ['0分', '1-5分', '6-10分', '11-15分', '16-20分']]
+        class_tree.insert('', tk.END, values=(
+            '📊 合计', total_eff, round(total_avg, 1),
+            max(jrb['max_bonus'] for _, (_, _, jrb) in class_items),
+            f"{sum(jrb['has_bonus_count'] for _, (_, _, jrb) in class_items) / total_eff * 100:.0f}%" if total_eff else '0%',
+            sd[0], _pct(sd[0], total_eff), sd[1], _pct(sd[1], total_eff),
+            sd[2], _pct(sd[2], total_eff), sd[3], _pct(sd[3], total_eff),
+            sd[4], _pct(sd[4], total_eff),
+        ), tags=('summary_row',))
     class_tree.pack(padx=20, pady=(0, 10))
 
 
@@ -366,7 +483,7 @@ def show_class_full_analysis(mw):
 
     stats_text = (
         f"学生总数：{total}人\n"
-        f"优良率：{d_stats['优秀率'] + d_stats['良好率']}%\n"
+        f"优良率：{d_stats['优秀率'] + d_stats['良好率']:.1f}%\n"
         f"及格率：{d_stats['及格率']}%\n"
         f"优秀率：{d_stats['优秀率']}%  |  良好率：{d_stats['良好率']}%  |  不及格率：{d_stats['不及格率']}%\n"
         f"优秀：{counts['优秀']}人  |  良好：{counts['良好']}人  |  及格：{counts['及格']}人  |  不及格：{counts['不及格']}人"
@@ -514,6 +631,7 @@ def _build_test_comparison_table(notebook, mw, grade=None, title='测试对比')
     comp_frame = tk.Frame(notebook, bg=COLOR_BG_WHITE)
     notebook.add(comp_frame, text='测试对比')
 
+    from analysis import _count_jump_rope_bonus
     round_stats = []
     for ri in range(max_rounds):
         students = []
@@ -527,30 +645,36 @@ def _build_test_comparison_table(notebook, mw, grade=None, title='测试对比')
         counts = dist['counts']
         pc = dist['pass_count']
         excel = round((counts['优秀'] + counts['良好']) / total * 100, 1) if total else 0
+        jrb = _count_jump_rope_bonus(students)
         round_stats.append({'round': ri + 1, 'total': total, 'excel': excel,
-                           'pass_rate': round(pc / total * 100, 1) if total else 0, 'counts': counts})
+                           'pass_rate': round(pc / total * 100, 1) if total else 0,
+                           'counts': counts, 'jrb': jrb})
 
     r_labels = [f"第{rs['round']}次" for rs in round_stats]
 
     tbl = tk.Frame(comp_frame, bg=COLOR_BG_WHITE)
     tbl.pack(fill='x', padx=10, pady=8)
-    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格')
-    widths = (55, 45, 60, 55, 45, 45, 45, 55)
+    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格',
+            '附加分\n人数', '平均\n附加分')
+    widths = (55, 45, 60, 55, 45, 45, 45, 55, 55, 55)
     tree = ttk.Treeview(tbl, columns=cols, show='headings', height=len(round_stats) + 1)
     for c, w in zip(cols, widths):
         tree.heading(c, text=c, anchor='center')
         tree.column(c, width=w, anchor='center', minwidth=35)
     for rs in round_stats:
-        tree.insert('', tk.END, values=(f"第{rs['round']}次", rs['total'], f"{rs['excel']}%",
-                    f"{rs['pass_rate']}%", rs['counts']['优秀'], rs['counts']['良好'],
-                    rs['counts']['及格'], rs['counts']['不及格']))
+        jrb = rs['jrb']
+        tree.insert('', tk.END, values=(
+            f"第{rs['round']}次", rs['total'], f"{rs['excel']}%",
+            f"{rs['pass_rate']}%", rs['counts']['优秀'], rs['counts']['良好'],
+            rs['counts']['及格'], rs['counts']['不及格'],
+            jrb['has_bonus_count'], jrb['avg_bonus']))
     tree.pack(fill='x')
 
     chart_frame = tk.Frame(comp_frame, bg=COLOR_BG_WHITE)
     chart_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
-    fig = Figure(figsize=(10, 4), dpi=100)
-    ax1 = fig.add_subplot(121)
+    fig = Figure(figsize=(12, 4), dpi=100)
+    ax1 = fig.add_subplot(131)
     r_avgs = [rs['excel'] for rs in round_stats]
     ax1.plot(r_labels, r_avgs, 'o-', color='#1976d2', linewidth=2, markersize=8)
     for i, v in enumerate(r_avgs):
@@ -559,7 +683,7 @@ def _build_test_comparison_table(notebook, mw, grade=None, title='测试对比')
     ax1.set_ylabel('优良率(%)')
     ax1.set_ylim(bottom=max(0, min(r_avgs) - 5), top=min(105, max(r_avgs) + 8))
 
-    ax2 = fig.add_subplot(122)
+    ax2 = fig.add_subplot(132)
     cats = ['优秀', '良好', '及格', '不及格']
     colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
     x = range(len(r_labels))
@@ -576,7 +700,18 @@ def _build_test_comparison_table(notebook, mw, grade=None, title='测试对比')
     ax2.set_xticklabels(r_labels, fontsize=9)
     ax2.set_title('等级分布变化', fontsize=12, fontweight='bold')
     ax2.legend(loc='upper right', fontsize=8)
-    fig.subplots_adjust(bottom=0.15, wspace=0.3)
+
+    ax3 = fig.add_subplot(133)
+    jrb_avgs = [rs['jrb']['avg_bonus'] for rs in round_stats]
+    jrb_rates = [rs['jrb']['has_bonus_rate'] for rs in round_stats]
+    ax3.plot(r_labels, jrb_avgs, 's-', color='#43a047', linewidth=2, markersize=8)
+    for i, v in enumerate(jrb_avgs):
+        ax3.text(i, v + 0.3, f'{v:.1f}', ha='center', fontsize=9)
+    ax3.set_title('附加分变化', fontsize=12, fontweight='bold')
+    ax3.set_ylabel('平均附加分(分)')
+    ax3.set_ylim(bottom=max(0, min(jrb_avgs) - 1), top=max(jrb_avgs) + 3 if jrb_avgs else 10)
+
+    fig.subplots_adjust(bottom=0.15, wspace=0.35)
     fig.tight_layout()
 
     canvas = FigureCanvasTkAgg(fig, master=chart_frame)
@@ -597,6 +732,7 @@ def show_test_comparison(mw):
     class_name = class_data.get('name', mw.current_class)
     grade_num = class_data.get('grade', 1)
 
+    from analysis import _count_jump_rope_bonus
     round_stats = []
     for i, r in enumerate(rounds):
         students = r.get('students', [])
@@ -605,19 +741,20 @@ def show_test_comparison(mw):
         counts = dist['counts']
         pc = dist['pass_count']
         excel = round((counts['优秀'] + counts['良好']) / total * 100, 1) if total else 0
+        jrb = _count_jump_rope_bonus(students)
         round_stats.append({
             'round': i + 1, 'total': total, 'excel': excel,
             'pass_rate': round(pc / total * 100, 1) if total else 0,
-            'counts': counts,
+            'counts': counts, 'jrb': jrb,
         })
 
     dialog = tk.Toplevel(mw.window)
     dialog.title(f'测试对比 - {class_name}')
-    dialog.geometry('920x720')
+    dialog.geometry('1080x720')
     dialog.resizable(True, True)
     dialog.transient(mw.window)
     dialog.grab_set()
-    center_window(dialog, 920, 720)
+    center_window(dialog, 1080, 720)
 
     notebook = ttk.Notebook(dialog)
     notebook.pack(fill='both', expand=True, padx=5, pady=5)
@@ -631,27 +768,29 @@ def show_test_comparison(mw):
     tbl_frame = tk.Frame(ov, bg=COLOR_BG_WHITE)
     tbl_frame.pack(fill='x', padx=15, pady=10)
 
-    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格')
-    widths = (60, 50, 70, 60, 50, 50, 50, 55)
+    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格',
+            '附加分\n人数', '平均\n附加分')
+    widths = (60, 50, 70, 60, 50, 50, 50, 55, 55, 55)
     tree = ttk.Treeview(tbl_frame, columns=cols, show='headings', height=len(round_stats) + 1)
     for c, w in zip(cols, widths):
         tree.heading(c, text=c, anchor='center')
         tree.column(c, width=w, anchor='center', minwidth=40)
     for rs in round_stats:
+        jrb = rs['jrb']
         tree.insert('', tk.END, values=(
             f"第{rs['round']}次", rs['total'], f"{rs['excel']}%", f"{rs['pass_rate']}%",
             rs['counts']['优秀'], rs['counts']['良好'],
-            rs['counts']['及格'], rs['counts']['不及格']
-        ))
+            rs['counts']['及格'], rs['counts']['不及格'],
+            jrb['has_bonus_count'], jrb['avg_bonus']))
     tree.pack(fill='x')
 
     chart_frame = tk.Frame(ov, bg=COLOR_BG_WHITE)
     chart_frame.pack(fill='both', expand=True, padx=15, pady=5)
 
-    fig = Figure(figsize=(10, 4.5), dpi=100)
+    fig = Figure(figsize=(12, 4.5), dpi=100)
     r_labels = [f"第{rs['round']}次" for rs in round_stats]
 
-    ax1 = fig.add_subplot(121)
+    ax1 = fig.add_subplot(131)
     r_avgs = [rs['excel'] for rs in round_stats]
     ax1.plot(r_labels, r_avgs, 'o-', color='#1976d2', linewidth=2, markersize=8)
     for i, v in enumerate(r_avgs):
@@ -660,7 +799,7 @@ def show_test_comparison(mw):
     ax1.set_ylabel('优良率(%)')
     ax1.set_ylim(bottom=max(0, min(r_avgs) - 5), top=min(105, max(r_avgs) + 8))
 
-    ax2 = fig.add_subplot(122)
+    ax2 = fig.add_subplot(132)
     cats = ['优秀', '良好', '及格', '不及格']
     colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
     x = range(len(r_labels))
@@ -677,7 +816,17 @@ def show_test_comparison(mw):
     ax2.set_xticklabels(r_labels, fontsize=9)
     ax2.set_title('等级分布变化', fontsize=13, fontweight='bold')
     ax2.legend(loc='upper right', fontsize=8)
-    fig.subplots_adjust(bottom=0.12, wspace=0.3)
+
+    ax3 = fig.add_subplot(133)
+    jrb_avgs = [rs['jrb']['avg_bonus'] for rs in round_stats]
+    ax3.plot(r_labels, jrb_avgs, 's-', color='#43a047', linewidth=2, markersize=8)
+    for i, v in enumerate(jrb_avgs):
+        ax3.text(i, v + 0.3, f'{v:.1f}', ha='center', fontsize=10)
+    ax3.set_title('附加分变化', fontsize=13, fontweight='bold')
+    ax3.set_ylabel('平均附加分(分)')
+    ax3.set_ylim(bottom=max(0, min(jrb_avgs) - 1), top=max(jrb_avgs) + 3 if jrb_avgs else 10)
+
+    fig.subplots_adjust(bottom=0.12, wspace=0.35)
     fig.tight_layout()
 
     canvas = FigureCanvasTkAgg(fig, master=chart_frame)
@@ -785,6 +934,7 @@ def show_aggregate_test_comparison(mw, grade=None, title='测试对比'):
         messagebox.showinfo('提示', '暂不足2次测试数据，无法对比')
         return
 
+    from analysis import _count_jump_rope_bonus
     round_stats = []
     for ri in range(max_rounds):
         students = []
@@ -798,19 +948,20 @@ def show_aggregate_test_comparison(mw, grade=None, title='测试对比'):
         counts = dist['counts']
         pc = dist['pass_count']
         excel = round((counts['优秀'] + counts['良好']) / total * 100, 1) if total else 0
+        jrb = _count_jump_rope_bonus(students)
         round_stats.append({
             'round': ri + 1, 'total': total, 'excel': excel,
             'pass_rate': round(pc / total * 100, 1) if total else 0,
-            'counts': counts,
+            'counts': counts, 'jrb': jrb,
         })
 
     dialog = tk.Toplevel(mw.window)
     dialog.title(title)
-    dialog.geometry('920x720')
+    dialog.geometry('1080x720')
     dialog.resizable(True, True)
     dialog.transient(mw.window)
     dialog.grab_set()
-    center_window(dialog, 920, 720)
+    center_window(dialog, 1080, 720)
 
     notebook = ttk.Notebook(dialog)
     notebook.pack(fill='both', expand=True, padx=5, pady=5)
@@ -824,25 +975,27 @@ def show_aggregate_test_comparison(mw, grade=None, title='测试对比'):
     tbl_frame = tk.Frame(ov, bg=COLOR_BG_WHITE)
     tbl_frame.pack(fill='x', padx=15, pady=10)
 
-    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格')
-    widths = (60, 50, 70, 60, 50, 50, 50, 55)
+    cols = ('轮次', '人数', '优良率', '及格率', '优秀', '良好', '及格', '不及格',
+            '附加分\n人数', '平均\n附加分')
+    widths = (60, 50, 70, 60, 50, 50, 50, 55, 55, 55)
     tree = ttk.Treeview(tbl_frame, columns=cols, show='headings', height=len(round_stats) + 1)
     for c, w in zip(cols, widths):
         tree.heading(c, text=c, anchor='center')
         tree.column(c, width=w, anchor='center', minwidth=40)
     for rs in round_stats:
+        jrb = rs['jrb']
         tree.insert('', tk.END, values=(
             f"第{rs['round']}次", rs['total'], f"{rs['excel']}%", f"{rs['pass_rate']}%",
             rs['counts']['优秀'], rs['counts']['良好'],
-            rs['counts']['及格'], rs['counts']['不及格']
-        ))
+            rs['counts']['及格'], rs['counts']['不及格'],
+            jrb['has_bonus_count'], jrb['avg_bonus']))
     tree.pack(fill='x')
 
     chart_frame = tk.Frame(ov, bg=COLOR_BG_WHITE)
     chart_frame.pack(fill='both', expand=True, padx=15, pady=5)
 
-    fig = Figure(figsize=(10, 4.5), dpi=100)
-    ax1 = fig.add_subplot(121)
+    fig = Figure(figsize=(12, 4.5), dpi=100)
+    ax1 = fig.add_subplot(131)
     r_avgs = [rs['excel'] for rs in round_stats]
     ax1.plot(r_labels, r_avgs, 'o-', color='#1976d2', linewidth=2, markersize=8)
     for i, v in enumerate(r_avgs):
@@ -851,7 +1004,7 @@ def show_aggregate_test_comparison(mw, grade=None, title='测试对比'):
     ax1.set_ylabel('优良率(%)')
     ax1.set_ylim(bottom=max(0, min(r_avgs) - 5), top=min(105, max(r_avgs) + 8))
 
-    ax2 = fig.add_subplot(122)
+    ax2 = fig.add_subplot(132)
     cats = ['优秀', '良好', '及格', '不及格']
     colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
     x = range(len(r_labels))
@@ -868,7 +1021,17 @@ def show_aggregate_test_comparison(mw, grade=None, title='测试对比'):
     ax2.set_xticklabels(r_labels, fontsize=9)
     ax2.set_title('等级分布变化', fontsize=13, fontweight='bold')
     ax2.legend(loc='upper right', fontsize=8)
-    fig.subplots_adjust(bottom=0.12, wspace=0.3)
+
+    ax3 = fig.add_subplot(133)
+    jrb_avgs = [rs['jrb']['avg_bonus'] for rs in round_stats]
+    ax3.plot(r_labels, jrb_avgs, 's-', color='#43a047', linewidth=2, markersize=8)
+    for i, v in enumerate(jrb_avgs):
+        ax3.text(i, v + 0.3, f'{v:.1f}', ha='center', fontsize=10)
+    ax3.set_title('附加分变化', fontsize=13, fontweight='bold')
+    ax3.set_ylabel('平均附加分(分)')
+    ax3.set_ylim(bottom=max(0, min(jrb_avgs) - 1), top=max(jrb_avgs) + 3 if jrb_avgs else 10)
+
+    fig.subplots_adjust(bottom=0.12, wspace=0.35)
     fig.tight_layout()
 
     canvas = FigureCanvasTkAgg(fig, master=chart_frame)
@@ -998,7 +1161,7 @@ def show_grade_analysis(mw, grade=None, show_selector=True):
                  font=(TK_FONT, 14, 'bold'), bg=COLOR_BG_WHITE, fg=COLOR_PRIMARY).pack(anchor='w')
         st = (
             f"学生总数：{stats['total']}人\n"
-            f"优良率：{stats['优秀率'] + stats['良好率']}%\n"
+            f"优良率：{stats['优秀率'] + stats['良好率']:.1f}%\n"
             f"及格率：{stats['及格率']}%\n"
             f"优秀率：{stats['优秀率']}%  |  良好率：{stats['良好率']}%  |  不及格率：{stats['不及格率']}%\n"
             f"优秀：{stats['优秀']}人  |  良好：{stats['良好']}人  |  及格：{stats['及格']}人  |  不及格：{stats['不及格']}人"
@@ -1277,7 +1440,7 @@ def show_school_analysis(mw):
 
     stats_text = (
         f"学生总数：{stats['total']}人\n"
-        f"全校优良率：{stats['优秀率'] + stats['良好率']}%\n"
+        f"全校优良率：{stats['优秀率'] + stats['良好率']:.1f}%\n"
         f"全校及格率：{stats['及格率']}%\n"
         f"优秀率：{stats['优秀率']}%  |  良好率：{stats['良好率']}%  |  不及格率：{stats['不及格率']}%\n"
         f"优秀：{stats['优秀']}人  |  良好：{stats['良好']}人  |  及格：{stats['及格']}人  |  不及格：{stats['不及格']}人"

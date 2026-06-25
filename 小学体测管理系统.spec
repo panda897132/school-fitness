@@ -4,13 +4,16 @@
 修复历史:
     2026-05-27: [FIX] 解决 Windows 7 下"丢失 api-ms-win-core-path-l1-1-0.dll"问题
                → 打包 UCRT API Set DLL + 运行时 hook，支持 Windows 7/8 运行
-    2026-05-28: [FIX] 使用自定义 shim DLL 替代从 System32 复制 API Set DLL
-               → 彻底解决 Windows 7 兼容性（不再依赖构建机系统版本）
+     2026-05-28: [FIX] 使用自定义 shim DLL 替代从 System32 复制 API Set DLL
+                → 彻底解决 Windows 7 兼容性（不再依赖构建机系统版本）
+     2026-06-25: [FIX] "DLL load failed while importing _ssl" 升级报错
+                → 直接扫描 DLLs/lib-dynload 目录收集 SSL 原生 DLL
+                → collect_dynamic_libs('ssl') 无效（_ssl.pyd 不在 ssl 包目录）
 """
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_dynamic_libs
+
 
 # ─── Windows 7 API Set Shim DLL ─────────────────────────────────────
 # Python 3.9+ 静态链接到 api-ms-win-core-path-l1-1-0.dll（Windows 10 API Set）
@@ -28,10 +31,29 @@ if os.path.exists(_shim_path):
 else:
     print(f"   [WIN7] ⚠️ 未找到 shim DLL（hooks/api-ms-win-core-path-l1-1-0.dll）")
 
+# ─── SSL 原生 DLL 显式收集 ────────────────────────────────────────
+# PyInstaller 的 collect_dynamic_libs('ssl') 只搜索 ssl 包目录 (Lib/ssl/),
+# 但 _ssl.pyd + OpenSSL DLL 实际在 Python 的 DLLs/ 或 lib-dynload/ 目录,
+# 所以 collect_dynamic_libs 扫不到。此处直接扫描这些目录。
+_SSL_NATIVE_DLLS = []
+if sys.platform == 'win32':
+    for _search_dir in [
+        os.path.join(sys.base_prefix, 'DLLs'),
+        os.path.join(sys.base_prefix, 'Lib', 'lib-dynload'),
+    ]:
+        if os.path.isdir(_search_dir):
+            for _f in os.listdir(_search_dir):
+                if _f.lower().startswith(('_ssl.', 'libcrypto', 'libssl')):
+                    _full = os.path.join(_search_dir, _f)
+                    _SSL_NATIVE_DLLS.append((_full, '.'))
+                    print(f"   [SSL] ✅ {_f} ({os.path.getsize(_full)} bytes)")
+    if not _SSL_NATIVE_DLLS:
+        print(f"   [SSL] ⚠️ 未找到 SSL 原生 DLL（搜索路径: {sys.base_prefix}）")
+
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=_WIN_API_SET_SHIM + collect_dynamic_libs('ssl'),
+    binaries=_WIN_API_SET_SHIM + _SSL_NATIVE_DLLS,
     datas=[
         ('icon.ico', '.'),
         ('icon.png', '.'),

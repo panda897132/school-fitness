@@ -15,6 +15,22 @@ if getattr(sys, 'frozen', False):
 else:
     _app_dir = os.path.dirname(os.path.abspath(__file__))
 
+# ─── 清理上次升级残留的 PyInstaller _MEI 临时目录 ─────────────
+# 每次启动时清理 %TEMP% 中不属于当前进程的 _MEI* 目录。
+# 解决升级时 "Failed to remove temporary directory" 弹窗的残留问题。
+if getattr(sys, 'frozen', False):
+    try:
+        import tempfile
+        import shutil
+        _current_mei = os.path.normpath(sys._MEIPASS)
+        for _name in os.listdir(tempfile.gettempdir()):
+            if _name.startswith('_MEI'):
+                _mei_path = os.path.join(tempfile.gettempdir(), _name)
+                if os.path.isdir(_mei_path) and os.path.normpath(_mei_path) != _current_mei:
+                    shutil.rmtree(_mei_path, ignore_errors=True)
+    except Exception:
+        pass
+
 # ─── 运行时数据根目录（处理 Program Files 等只读安装路径） ──────
 # 如果 EXE 所在目录不可写，运行时数据（students.json、app_config.json、
 # audit.log、error.log）回退到用户数据目录，避免 PermissionError 崩溃。

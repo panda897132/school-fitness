@@ -32,23 +32,22 @@ else:
     print(f"   [WIN7] ⚠️ 未找到 shim DLL（hooks/api-ms-win-core-path-l1-1-0.dll）")
 
 # ─── SSL 原生 DLL 显式收集 ────────────────────────────────────────
-# PyInstaller 的 collect_dynamic_libs('ssl') 只搜索 ssl 包目录 (Lib/ssl/),
-# 但 _ssl.pyd + OpenSSL DLL 实际在 Python 的 DLLs/ 或 lib-dynload/ 目录,
-# 所以 collect_dynamic_libs 扫不到。此处直接扫描这些目录。
+# 之前的方案只扫描特定文件名，但 _ssl.pyd 依赖的 OpenSSL DLL 在不同
+# Python 版本下文件名不同（libcrypto-1_1 vs libcrypto-3），且还有 VC
+# 运行时 DLL 的传递依赖。最可靠的方案：将 Python DLLs/ 目录全部打包。
+#
+# Python DLLs/ 目录通常只包含 ~20 个原生扩展及其依赖，体积约 5-10MB，
+# 打包后对总大小影响很小，但能彻底解决缺失 DLL 的崩溃问题。
 _SSL_NATIVE_DLLS = []
 if sys.platform == 'win32':
-    for _search_dir in [
-        os.path.join(sys.base_prefix, 'DLLs'),
-        os.path.join(sys.base_prefix, 'Lib', 'lib-dynload'),
-    ]:
+    for _search_dir in [os.path.join(sys.base_prefix, 'DLLs')]:
         if os.path.isdir(_search_dir):
-            for _f in os.listdir(_search_dir):
-                if _f.lower().startswith(('_ssl.', 'libcrypto', 'libssl')):
+            for _f in sorted(os.listdir(_search_dir)):
+                _low = _f.lower()
+                if _low.endswith(('.pyd', '.dll')):
                     _full = os.path.join(_search_dir, _f)
                     _SSL_NATIVE_DLLS.append((_full, '.'))
-                    print(f"   [SSL] ✅ {_f} ({os.path.getsize(_full)} bytes)")
-    if not _SSL_NATIVE_DLLS:
-        print(f"   [SSL] ⚠️ 未找到 SSL 原生 DLL（搜索路径: {sys.base_prefix}）")
+                    print(f"   [DLL] ✅ {_f} ({os.path.getsize(_full) / 1024:.0f} KB)")
 
 a = Analysis(
     ['main.py'],
@@ -91,7 +90,7 @@ exe = EXE(
     strip=False,
     upx=False,
     upx_exclude=[],
-    runtime_tmpdir=None,
+    runtime_tmpdir='./_mei_temp',
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,

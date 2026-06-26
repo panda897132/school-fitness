@@ -5,7 +5,7 @@ import platform
 import subprocess
 import sys
 
-_APP_VERSION = "1.0.27"
+_APP_VERSION = "1.0.28"
 
 # 源码运行时自动从 git tag 获取版本号（打包时 CI 会改写此文件）
 if not getattr(sys, 'frozen', False):
@@ -26,7 +26,7 @@ APP_REPO = "panda897132/school-fitness"
 # 下载镜像（国内用户加速 GitHub Release 下载）
 # 置空 = 直连 GitHub，慢但稳定
 # 设为 "https://ghproxy.com/" = 国内镜像加速，适合经常超时的网络环境
-DOWNLOAD_MIRROR = ""
+DOWNLOAD_MIRROR = "https://ghproxy.net"
 
 SCHOOL_NAME = "诸葛镇中心小学"
 APP_TITLE = f"{SCHOOL_NAME} — 学生体质健康管理系统"
